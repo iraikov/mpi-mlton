@@ -70,7 +70,12 @@ datatype mpidata =
  structure Comm =
  struct
 
-   val World  = _import "mlton_MPI_comm_world" : unit -> comm ;
+   val World  = 
+       let 
+           val f = _import "mlton_MPI_comm_world" : unit -> comm ;
+       in
+           f()
+       end
 
    val cSize  = _import "MPI_Comm_size" :  comm * int ref  -> int ;
 
