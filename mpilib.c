@@ -92,7 +92,7 @@ void mlton_MPI_probe (int *status_count, int *status_source, int *status_tag,
   MPI_Status status;
   
   MPI_Probe(source, tag, comm, &status);
-  MPI_Get_count(&status, MPI_BYTE, &status_count);
+  MPI_Get_count(&status, MPI_BYTE, status_count);
 
   *status_source = status.MPI_SOURCE;
 
@@ -126,7 +126,9 @@ int mlton_MPI_Recv_double (double *v, size_t n, int source, int tag, MPI_Comm co
 
 int mlton_MPI_Send_char (char *v, size_t n, int dest, int tag, MPI_Comm comm)
 {
-  return MPI_Send(v, n, MPI_CHAR, dest, tag, comm);
+  int status;
+  status = MPI_Send(v, n, MPI_CHAR, dest, tag, comm);
+  return status;
 }
 
 

@@ -274,10 +274,21 @@ datatype mpidata =
  struct
 
 
-    val AnyTag = _import "mlton_MPI_get_any_tag" : unit -> int;
-    val AnySource = _import "mlton_MPI_get_any_source" : unit -> int;
+    val AnyTag = 
+        let 
+            val f = _import "mlton_MPI_get_any_tag" : unit -> int;
+        in
+            f()
+        end
 
-    val cProbe = _import "mlton_MPI_Probe" : int ref * int ref * int ref * int * int * comm -> unit;
+    val AnySource = 
+        let
+            val f = _import "mlton_MPI_get_any_source" : unit -> int;
+        in
+            f()
+        end
+
+    val cProbe = _import "mlton_MPI_probe" : int ref * int ref * int ref * int * int * comm -> unit;
 
     fun Probe (source, tag, comm) =
         let
