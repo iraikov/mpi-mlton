@@ -334,16 +334,84 @@ datatype mpidata =
 
     val cRecvReal = _import "mlton_MPI_Recv_double" : RealArray.array * int * int * int * comm -> int;
 
-    fun Recv (v, source, tag, comm) =
-        case v of
-            MPI_CHAR c => cRecvChar (CharArray.fromList [c], 1, source, tag, comm)
-          | MPI_CHAR_ARRAY a => cRecvChar (a, CharArray.length a, source, tag, comm)
-          | MPI_INT i => cRecvInt (Int32Array.fromList [i], 1, source, tag, comm)
-          | MPI_INT_ARRAY a => cRecvInt (a, Int32Array.length a, source, tag, comm)
-          | MPI_LONG i => cRecvLong (Int64Array.fromList [i], 1, source, tag, comm)
-          | MPI_LONG_ARRAY a => cRecvLong (a, Int64Array.length a, source, tag, comm)
-          | MPI_REAL i => cRecvReal (RealArray.fromList [i], 1, source, tag, comm)
-          | MPI_REAL_ARRAY a => cRecvReal (a, RealArray.length a, source, tag, comm)
+    fun Recv (ty, source, tag, comm) =
+        case ty of
+            MPI_CHAR_t => 
+            let
+                val r = CharArray.fromList [Char.chr 0]
+                val status = cRecvChar (r, 1, source, tag, comm)
+            in
+                if (not (status = 0))
+                then raise MPIError (status, "Recv error")
+                else MPI_CHAR (CharArray.sub(r,0))
+            end
+          | MPI_INT_t => 
+            let
+                val r = Int32Array.fromList [0]
+                val status = cRecvInt (r, 1, source, tag, comm)
+            in
+                if (not (status = 0))
+                then raise MPIError (status, "Recv error")
+                else MPI_INT (Int32Array.sub(r,0))
+            end
+          | MPI_LONG_t => 
+            let
+                val r = Int64Array.fromList [0]
+                val status = cRecvLong (r, 1, source, tag, comm)
+            in
+                if (not (status = 0))
+                then raise MPIError (status, "Recv error")
+                else MPI_LONG (Int64Array.sub(r,0))
+            end
+          | MPI_REAL_t => 
+            let
+                val r = RealArray.fromList [0.0]
+                val status = cRecvReal (r, 1, source, tag, comm);
+            in 
+                if (not (status = 0))
+                then raise MPIError (status, "Recv error")
+                else MPI_REAL (RealArray.sub(r,0))
+            end
+          | MPI_CHAR_ARRAY_t => 
+            let
+                val (n,_,_) = Probe (source, tag, comm) 
+                val a = CharArray.array (n, Char.chr 0)
+                val status = cRecvChar (a, n, source, tag, comm)
+            in 
+                if (not (status = 0))
+                then raise MPIError (status, "Recv error")
+                else MPI_CHAR_ARRAY (a)
+            end
+          | MPI_INT_ARRAY_t => 
+            let
+                val (n,_,_) = Probe (source, tag, comm) 
+                val a = Int32Array.array (n, 0)
+                val status = cRecvInt (a, n, source, tag, comm)
+            in
+                if (not (status = 0))
+                then raise MPIError (status, "Recv error")
+                else MPI_INT_ARRAY (a)
+            end
+          | MPI_LONG_ARRAY_t => 
+            let
+                val (n,_,_) = Probe (source, tag, comm) 
+                val a = Int64Array.array (n, 0)
+                val status = cRecvLong (a, n, source, tag, comm)
+            in
+                if (not (status = 0))
+                then raise MPIError (status, "Recv error")
+                else MPI_LONG_ARRAY (a)
+            end
+          | MPI_REAL_ARRAY_t =>
+            let
+                val (n,_,_) = Probe (source, tag, comm) 
+                val a = RealArray.array (n, 0.0)
+                val status = cRecvReal (a, n, source, tag, comm)
+            in
+                if (not (status = 0))
+                then raise MPIError (status, "Recv error")
+                else MPI_REAL_ARRAY (a)
+            end
 
     val cBcastChar = _import "mlton_MPI_Bcast_char" : CharArray.array * int * int * comm -> int;
 
