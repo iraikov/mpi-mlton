@@ -412,6 +412,15 @@ datatype mpidata =
                 then raise MPIError (status, "Recv error")
                 else MPI_REAL_ARRAY (a)
             end
+ end
+
+ structure Collective =
+ struct
+
+    val nullCharArray = CharArray.fromList []
+    val nullIntArray  = Int32Array.fromList []
+    val nullLongArray = Int64Array.fromList []
+    val nullRealArray = RealArray.fromList []
 
     val cBcastChar = _import "mlton_MPI_Bcast_char" : CharArray.array * int * int * comm -> int;
 
@@ -432,7 +441,6 @@ datatype mpidata =
           | MPI_REAL i => cBcastReal (RealArray.fromList [i], 1, root, comm)
           | MPI_REAL_ARRAY a => cBcastReal (a, RealArray.length a, root, comm)
 
-
     val cScatterChar = _import "mlton_MPI_Scatter_char"   : CharArray.array * int * CharArray.array * int * int * comm -> int;
 
     val cScatterInt  = _import "mlton_MPI_Scatter_int"    : Int32Array.array * int * Int32Array.array * int * int * comm -> int;
@@ -441,10 +449,6 @@ datatype mpidata =
 
     val cScatterReal = _import "mlton_MPI_Scatter_double" : RealArray.array * int * RealArray.array * int * int * comm -> int;
 
-    val nullCharArray = CharArray.fromList []
-    val nullIntArray  = Int32Array.fromList []
-    val nullLongArray = Int64Array.fromList []
-    val nullRealArray = RealArray.fromList []
 
     exception InvalidScatter
     exception InvalidScatterDataSize of int * int * int
@@ -532,10 +536,8 @@ datatype mpidata =
                      if rn = 1 then (MPI_REAL (RealArray.sub (r,0))) else (MPI_REAL_ARRAY r))
                 end
                 | _ => raise InvalidScatter
-                    
-    end
 
-
+        end
 
     val cRecvScattervChar = _import "mlton_MPI_RecvScatterv_char"   : CharArray.array * int * int * comm -> int ;
     val cSendScattervChar = _import "mlton_MPI_SendScatterv_char"   : CharArray.array * Int32Array.array  * Int32Array.array *
@@ -924,11 +926,9 @@ datatype mpidata =
 
             | _ => raise InvalidGatherv
       end
-
-        
-
+ end
 end
 
 
 
-end
+
