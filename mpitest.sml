@@ -80,8 +80,24 @@ fun testBcast (data, len, make, toString) =
               val result = MPI.Collective.Bcast (a, 0, MPI.Comm.World)
           in
               assert (result = 0);
-              mpiPrintLn ("received " ^ (toString a))
+              mpiPrintLn ("received broadcast: " ^ (toString a))
           end);
+     MPI.Barrier (MPI.Comm.World))
+
+fun testScatter (data, len, make, toString) =
+    (if (myrank = 0)
+     then (let val _ = mpiPrintLn ("scatter send: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
+               val a = make len
+               val a = MPI.Collective.sendScatter (data, len, a, 0, MPI.Comm.World)
+           in
+               mpiPrintLn ("received " ^ (toString a))
+           end)
+     else (let val _ = mpiPrintLn ("scatter receive: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
+               val a = make len
+               val a = MPI.Collective.recvScatter (a, 0, MPI.Comm.World) 
+           in
+               mpiPrintLn ("received " ^ (toString a))
+           end);
      MPI.Barrier (MPI.Comm.World))
 
 
@@ -183,8 +199,13 @@ val _ = MPI.Barrier MPI.Comm.World
 
 
 
-val intdata = List.tabulate (size, fn (i) => MPI.MPI_INT (10 * i))
+val intdata  = List.tabulate (size, fn (i) => MPI.MPI_INT (10 * i))
 val realdata = List.tabulate (size, fn (i) => MPI.MPI_REAL (Real.* (0.1, Real.fromInt i)))
+val vsize    = 3
+val vsdata   = List.tabulate (size, fn (i) => (String.implode 
+                                                   (List.tabulate
+                                                        (vsize,
+							 (fn (j) => (Char.chr (i + 97)))))))
 
 val _ = testSendRecv (fn(src,tag,comm) => MPI.Message.Recv(MPI.MPI_INT_t,src,tag,comm),
                       fn (MPI.MPI_INT x) => MPI.MPI_INT (1 + x), intdata)
@@ -194,5 +215,10 @@ val _ = testSendRecv (fn(src,tag,comm) => MPI.Message.Recv(MPI.MPI_REAL_t,src,ta
 val _ = testBcast (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode ("Hello!"))),
                    6, fn(len) => MPI.MPI_CHAR_ARRAY (CharArray.array (len, Char.chr 0)),
                    charArrayString)
+
+val _ = testScatter (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (String.concat vsdata))),
+                     String.size (String.concat vsdata) div size,
+                     fn(len) => MPI.MPI_CHAR_ARRAY (CharArray.array (len, Char.chr 0)),
+                     charArrayString)
 
 val _ = MPI.Finalize ()
