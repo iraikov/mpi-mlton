@@ -417,6 +417,7 @@ datatype mpidata =
  structure Collective =
  struct
 
+
     val nullCharArray = CharArray.fromList []
     val nullIntArray  = Int32Array.fromList []
     val nullLongArray = Int64Array.fromList []
@@ -717,7 +718,6 @@ datatype mpidata =
     exception InvalidGather
     exception InvalidGatherDataSize of int * int * int
 
-    (* TODO: Build a list of return results instead of putting everything in a single array  *)
     fun recvGather (r, rn, s, root, comm) =
         let 
             val nprocs = Comm.Size comm
@@ -767,7 +767,6 @@ datatype mpidata =
 
     end
 
-    (* TODO: Build a list of return results instead of putting everything in a single array  *)
     fun sendGather (s, root, comm) =
         let 
             val nprocs = Comm.Size comm
@@ -802,21 +801,20 @@ datatype mpidata =
 
 
     val cSendGathervChar = _import "mlton_MPI_SendGatherv_char"   : CharArray.array * int * int * comm -> int;
-    val cRecvGathervChar = _import "mlton_MPI_SendGatherv_char"   : CharArray.array * int * CharArray.array * Int32Array.array * Int32Array.array * int * comm -> int;
+    val cRecvGathervChar = _import "mlton_MPI_RecvGatherv_char"   : CharArray.array * int * CharArray.array * Int32Array.array * Int32Array.array * int * comm -> int;
             
     val cSendGathervInt = _import "mlton_MPI_SendGatherv_int"   : Int32Array.array * int * int * comm -> int;
-    val cRecvGathervInt = _import "mlton_MPI_SendGatherv_int"   : Int32Array.array * int * Int32Array.array * Int32Array.array * Int32Array.array * int * comm -> int;
+    val cRecvGathervInt = _import "mlton_MPI_RecvGatherv_int"   : Int32Array.array * int * Int32Array.array * Int32Array.array * Int32Array.array * int * comm -> int;
 
     val cSendGathervLong = _import "mlton_MPI_SendGatherv_long"   : Int64Array.array * int * int * comm -> int;
-    val cRecvGathervLong = _import "mlton_MPI_SendGatherv_long"   : Int64Array.array * int * Int64Array.array * Int32Array.array * Int32Array.array * int * comm -> int;
+    val cRecvGathervLong = _import "mlton_MPI_RecvGatherv_long"   : Int64Array.array * int * Int64Array.array * Int32Array.array * Int32Array.array * int * comm -> int;
 
     val cSendGathervReal = _import "mlton_MPI_SendGatherv_double"   : RealArray.array * int * int * comm -> int;
-    val cRecvGathervReal = _import "mlton_MPI_SendGatherv_double"   : RealArray.array * int * RealArray.array * Int32Array.array * Int32Array.array * int * comm -> int;
+    val cRecvGathervReal = _import "mlton_MPI_RecvGatherv_double"   : RealArray.array * int * RealArray.array * Int32Array.array * Int32Array.array * int * comm -> int;
             
     exception InvalidGatherv
   
               
-    (* TODO: Build a list of return results instead of putting everything in a single array  *)
     fun recvGatherv (s, root, comm) =
       let 
           val nprocs = Comm.Size comm
@@ -833,19 +831,19 @@ datatype mpidata =
                                                   | _ => raise InvalidGatherv
                                                     
                                                     
-                              val (_,displs)  = Int32Array.foldr (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) recvlengths
-                                                                     
+                              val displs  = List.rev (#2(Int32Array.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) recvlengths))
+     
                               val total = Int32Array.foldl (op +) 0 recvlengths
                                                      
 		              (* Allocates receive buffer *)
                               val recvbuf = makeArray total
-                     
+
                               (* Gather the data *)
                               val _ = gatherArray (sendbuf, mylen, 
                                                    recvbuf, recvlengths, Int32Array.fromList displs, 
                                                    root, comm);
                           in
-                              ret recvbuf
+                              (ret recvbuf, recvlengths)
                           end)
                            
       in

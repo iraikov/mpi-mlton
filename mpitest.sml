@@ -17,12 +17,17 @@ fun mpiPrint str = print ("Rank " ^ (Int.toString myrank) ^ ": " ^ str)
 fun mpiPrintLn str = print ("Rank " ^ (Int.toString myrank) ^ ": " ^ str ^ "\n")
 
 exception InvalidCharArray
+exception InvalidIntArray
 
 fun charArrayString (a) = 
     case a of
         MPI.MPI_CHAR_ARRAY r => 
         String.implode (CharArray.foldr (op ::) [] r)
       | _ => raise InvalidCharArray
+
+fun showIntArray (v) =
+    (String.concatWith ", " (Array.foldr (fn (x, ax) => (Int.toString x)::ax) [] v))
+            
 
 
 fun testSendRecv (recvdata, transf, data) =
@@ -90,13 +95,57 @@ fun testScatter (data, len, make, toString) =
                val a = make len
                val a = MPI.Collective.sendScatter (data, len, a, 0, MPI.Comm.World)
            in
-               mpiPrintLn ("received " ^ (toString a))
+               mpiPrintLn ("scatter received " ^ (toString a))
            end)
      else (let val _ = mpiPrintLn ("scatter receive: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
                val a = make len
                val a = MPI.Collective.recvScatter (a, 0, MPI.Comm.World) 
            in
-               mpiPrintLn ("received " ^ (toString a))
+               mpiPrintLn ("scatter received " ^ (toString a))
+           end);
+     MPI.Barrier (MPI.Comm.World))
+
+fun testGather (data, len, make, toString) =
+    (if (myrank = 0)
+     then (let val _ = mpiPrintLn ("gather receive: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
+               val a = make (len * size)
+               val a = MPI.Collective.recvGather (a, len, data, 0, MPI.Comm.World)
+           in
+               mpiPrintLn ("gather received " ^ (toString a))
+           end)
+     else (let val _ = mpiPrintLn ("gather send: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
+               val a = MPI.Collective.sendGather (data, 0, MPI.Comm.World) 
+           in
+               mpiPrintLn ("gather sent status " ^ (Int.toString a))
+           end);
+     MPI.Barrier (MPI.Comm.World))
+
+fun testScatterv (data, toString) =
+    (if (myrank = 0)
+     then (let 
+               val a = MPI.Collective.sendScatterv (data, 0, MPI.Comm.World)
+           in
+               mpiPrintLn ("scatterv received " ^ (toString a))
+           end)
+     else (let 
+               val a = MPI.Collective.recvScatterv (MPI.MPI_CHAR_ARRAY_t, 0, MPI.Comm.World) 
+           in
+               mpiPrintLn ("scatterv received " ^ (toString a))
+           end);
+     MPI.Barrier (MPI.Comm.World))
+
+fun testGatherv (data, toString) =
+    (if (myrank = 0)
+     then (let val _ = mpiPrintLn ("gatherv receive: data = " ^ (toString data))
+               val (a,rlens) = MPI.Collective.recvGatherv (data, 0, MPI.Comm.World)
+           in
+               mpiPrintLn ("gatherv received " ^ (toString a));
+               mpiPrintLn ("gatherv lengths: " ^ (showIntArray rlens))
+           end)
+     else (let val _ = mpiPrintLn ("gatherv send: data = " ^ (toString data))
+               val a = MPI.Collective.sendGatherv (data, 0, MPI.Comm.World) 
+           in
+               mpiPrintLn ("gatherv sent status " ^ (Int.toString a))
            end);
      MPI.Barrier (MPI.Comm.World))
 
@@ -206,6 +255,10 @@ val vsdata   = List.tabulate (size, fn (i) => (String.implode
                                                    (List.tabulate
                                                         (vsize,
 							 (fn (j) => (Char.chr (i + 97)))))))
+val vvsdata   = List.tabulate (size, fn (i) => (String.implode 
+                                                    (List.tabulate
+                                                         (vsize+i,
+							  (fn (j) => (Char.chr (i + 97)))))))
 
 val _ = testSendRecv (fn(src,tag,comm) => MPI.Message.Recv(MPI.MPI_INT_t,src,tag,comm),
                       fn (MPI.MPI_INT x) => MPI.MPI_INT (1 + x), intdata)
@@ -219,6 +272,17 @@ val _ = testBcast (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode ("Hell
 val _ = testScatter (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (String.concat vsdata))),
                      String.size (String.concat vsdata) div size,
                      fn(len) => MPI.MPI_CHAR_ARRAY (CharArray.array (len, Char.chr 0)),
+                     charArrayString)
+
+val _ = testGather (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (List.nth(vsdata,myrank)))),
+                    vsize,
+                    fn(len) => MPI.MPI_CHAR_ARRAY (CharArray.array (len, Char.chr 0)),
+                    charArrayString)
+
+val _ = testScatterv (map (fn(s) => MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (s)))) vvsdata,
+                     charArrayString)
+
+val _ = testGatherv (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (List.nth(vvsdata,myrank)))),
                      charArrayString)
 
 val _ = MPI.Finalize ()
