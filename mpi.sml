@@ -67,6 +67,28 @@ datatype mpidata =
 
  val Barrier    = _import "MPI_Barrier" : comm -> int ;
 
+ structure Utils =
+ struct
+ 
+ fun chunkSize (totalSize, nprocs, myrank) =
+     if (nprocs < 1) orelse (nprocs <= myrank)
+     then raise Overflow
+     else (if totalSize < myrank
+           then 0 
+           else (if totalSize <= nprocs
+                 then 1
+                 else (let 
+                          val chunkDiv = Int.div (totalSize, nprocs)
+                          val chunkRem = totalSize - nprocs * chunkDiv 
+                      in
+                          if myrank < chunkRem then chunkDiv+1 else chunkDiv
+                      end)))
+ end
+
+ fun gid (lid, nprocs, myrank) = myrank + nprocs * lid
+
+ end
+ 
  structure Comm =
  struct
 
