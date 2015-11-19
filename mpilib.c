@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <mpi.h>
 #include "mpiexport.h"
 
@@ -5,9 +6,10 @@ static void mlton_MPI_error_handler (MPI_Comm * comm, int * errcode, ...)
 {
   char errmsg[MPI_MAX_ERROR_STRING + 1];
   int resultlen;
-
+  
   MPI_Error_string(*errcode, errmsg, &resultlen);
   errmsg[resultlen-1] = 0;
+  fprintf(stderr, "%s\n", errmsg);
 
   mlton_MPI_exception (*errcode, resultlen, errmsg);
 }
@@ -256,14 +258,12 @@ int mlton_MPI_RecvScatterv_char (char *recvbuf, int nrecv,
 
 
 int mlton_MPI_SendScatterv_char (char *sendbuf, int *sendcounts, int *displs, 
-                                  char *recvbuf, int nrecv,
-                                  int root, MPI_Comm comm)
+                                 char *recvbuf, int nrecv, int root, MPI_Comm comm)
 {
   int result;
-  int size;
 
   result = MPI_Scatterv (sendbuf, sendcounts, displs, MPI_CHAR,
-                         recvbuf, recvbuf, MPI_CHAR,
+                         recvbuf, nrecv, MPI_CHAR,
                          root, comm);
 
   return result;
@@ -272,14 +272,13 @@ int mlton_MPI_SendScatterv_char (char *sendbuf, int *sendcounts, int *displs,
 
 
 int mlton_MPI_SendScatterv_int (int *sendbuf, int *sendcounts, int *displs, 
-                                  int *recvbuf, int nrecv,
-                                  int root, MPI_Comm comm)
+                                int *recvbuf, int nrecv, int root, MPI_Comm comm)
 {
   int result;
   int size;
 
   result = MPI_Scatterv (sendbuf, sendcounts, displs, MPI_INT,
-                         recvbuf, recvbuf, MPI_INT,
+                         recvbuf, nrecv, MPI_INT,
                          root, comm);
 
   return result;
@@ -336,7 +335,7 @@ int mlton_MPI_RecvScatterv_double (double *sendbuf, int *sendcounts, int *displs
   int size;
 
   result = MPI_Scatterv (sendbuf, sendcounts, displs, MPI_DOUBLE,
-                         recvbuf, recvbuf, MPI_DOUBLE,
+                         recvbuf, nrecv, MPI_DOUBLE,
                          root, comm);
 
   return result;
