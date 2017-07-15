@@ -9,85 +9,49 @@ structure P = MLton.Pointer
 type comm  = P.t
 type group = P.t
 
-structure CharVector = MonoVector (type elem = CharVector.elem)
-structure CharArray = MonoArray (type elem = CharArray.elem
-                                 structure V = CharVector)
 
-structure Int32Vector = MonoVector (type elem = Int32Vector.elem)
-structure Int32Array = MonoArray (type elem = Int32Array.elem
-                                  structure V = Int32Vector)
+val e = _export "mlton_MPI_exception": (int * int * string -> unit) -> unit;
 
-structure Int64Vector = MonoVector (type elem = Int64Vector.elem)
-structure Int64Array = MonoArray (type elem = Int64Array.elem
-                                  structure V = Int64Vector)
+val _ = e (fn (i, len, msg) => raise MPIError (i, msg))
+          
+val cInit = _import "mlton_MPI_Init" : int * string array * int array -> unit;
 
-structure RealVector = MonoVector (type elem = RealVector.elem)
-structure RealArray = MonoArray (type elem = RealArray.elem
-                                 structure V = RealVector)
+fun Init (args) =
+  let
+      val argc   = List.length args
+      val argv   = Array.fromList args
+      val argvsz = Array.fromList (map String.size args)
+  in
+      cInit (argc, argv, argvsz)
+  end
+      
+val Finalize   = _import "MPI_Finalize" : unit -> unit;
 
-datatype mpitype =
-         MPI_CHAR_t
-       | MPI_INT_t 
-       | MPI_LONG_t
-       | MPI_REAL_t
-       | MPI_CHAR_ARRAY_t
-       | MPI_INT_ARRAY_t
-       | MPI_LONG_ARRAY_t
-       | MPI_REAL_ARRAY_t
+val Wtime      = _import "MPI_Wtime": unit -> real ;
 
-datatype mpidata =
-         MPI_CHAR of char
-       | MPI_INT  of int
-       | MPI_LONG of Int64.int
-       | MPI_REAL of real
-       | MPI_CHAR_ARRAY of CharArray.array
-       | MPI_INT_ARRAY  of Int32Array.array
-       | MPI_LONG_ARRAY of Int64Array.array
-       | MPI_REAL_ARRAY of RealArray.array
+val Barrier    = _import "MPI_Barrier" : comm -> int ;
 
+structure Utils =
+struct
 
- val e = _export "mlton_MPI_exception": (int * int * string -> unit) -> unit;
-
- val _ = e (fn (i, len, msg) => raise MPIError (i, msg))
-
- val cInit = _import "mlton_MPI_Init" : int * string array * int array -> unit;
-
- fun Init (args) =
-     let
-         val argc   = List.length args
-         val argv   = Array.fromList args
-         val argvsz = Array.fromList (map String.size args)
-     in
-         cInit (argc, argv, argvsz)
-     end
-
- val Finalize   = _import "MPI_Finalize" : unit -> unit;
-
- val Wtime      = _import "MPI_Wtime": unit -> real ;
-
- val Barrier    = _import "MPI_Barrier" : comm -> int ;
-
- structure Utils =
- struct
- 
- fun chunkSize (totalSize, nprocs, myrank) =
-     if (nprocs < 1) orelse (nprocs <= myrank)
-     then raise Overflow
-     else (if totalSize < myrank
-           then 0 
-           else (if totalSize <= nprocs
-                 then 1
-                 else (let 
-                          val chunkDiv = Int.div (totalSize, nprocs)
-                          val chunkRem = totalSize - nprocs * chunkDiv 
-                      in
-                          if myrank < chunkRem then chunkDiv+1 else chunkDiv
-                      end)))
- end
-
- fun gid (lid, nprocs, myrank) = myrank + nprocs * lid
-
- end
+fun chunkSize (totalSize, nprocs, myrank) =
+  if (nprocs < 1) orelse (nprocs <= myrank)
+  then raise Overflow
+  else (if totalSize < myrank
+        then 0 
+        else (if totalSize <= nprocs
+              then 1
+              else (let 
+                       val chunkDiv = Int.div (totalSize, nprocs)
+                       val chunkRem = totalSize - nprocs * chunkDiv 
+                   in
+                       if myrank < chunkRem then chunkDiv+1 else chunkDiv
+                   end)))
+end
+    
+fun gid (lid, nprocs, myrank) = myrank + nprocs * lid
+                                                      
+end
  
  structure Comm =
  struct
@@ -329,404 +293,57 @@ datatype mpidata =
         end
 
 
-    val cSendChar = _import "mlton_MPI_Send_char" : CharArray.array * int * int * int * comm -> int;
+    val cSendW32 = _import "mlton_MPI_Send_Word32" : Word32Array.array * int * int * int * comm -> int;
 
-    val cSendInt  = _import "mlton_MPI_Send_int"  : Int32Array.array * int * int * int * comm -> int;
+    fun Send (buf, dest, tag, comm) = cSendW32 (buf, Word32Array.length buf, dest, tag, comm)
 
-    val cSendLong = _import "mlton_MPI_Send_long" : Int64Array.array * int * int * int * comm -> int;
+    val cRecvW32 = _import "mlton_MPI_Recv_Word32" : Word32Array.array * int * int * int * comm -> int;
 
-    val cSendReal = _import "mlton_MPI_Send_double" : RealArray.array * int * int * int * comm -> int;
-
-    fun Send (v, dest, tag, comm) =
-        case v of
-            MPI_CHAR c => cSendChar (CharArray.fromList [c], 1, dest, tag, comm)
-          | MPI_CHAR_ARRAY a => cSendChar (a, CharArray.length a, dest, tag, comm)
-          | MPI_INT i => cSendInt (Int32Array.fromList [i], 1, dest, tag, comm)
-          | MPI_INT_ARRAY a => cSendInt (a, Int32Array.length a, dest, tag, comm)
-          | MPI_LONG i => cSendLong (Int64Array.fromList [i], 1, dest, tag, comm)
-          | MPI_LONG_ARRAY a => cSendLong (a, Int64Array.length a, dest, tag, comm)
-          | MPI_REAL i => cSendReal (RealArray.fromList [i], 1, dest, tag, comm)
-          | MPI_REAL_ARRAY a => cSendReal (a, RealArray.length a, dest, tag, comm)
-
-    val cRecvChar = _import "mlton_MPI_Recv_char" : CharArray.array * int * int * int * comm -> int;
-
-    val cRecvInt  = _import "mlton_MPI_Recv_int"  : Int32Array.array * int * int * int * comm -> int;
-
-    val cRecvLong = _import "mlton_MPI_Recv_long" : Int64Array.array * int * int * int * comm -> int;
-
-    val cRecvReal = _import "mlton_MPI_Recv_double" : RealArray.array * int * int * int * comm -> int;
-
-    fun Recv (ty, source, tag, comm) =
-        case ty of
-            MPI_CHAR_t => 
-            let
-                val r = CharArray.fromList [Char.chr 0]
-                val status = cRecvChar (r, 1, source, tag, comm)
-            in
-                if (not (status = 0))
-                then raise MPIError (status, "Recv error")
-                else MPI_CHAR (CharArray.sub(r,0))
-            end
-          | MPI_INT_t => 
-            let
-                val r = Int32Array.fromList [0]
-                val status = cRecvInt (r, 1, source, tag, comm)
-            in
-                if (not (status = 0))
-                then raise MPIError (status, "Recv error")
-                else MPI_INT (Int32Array.sub(r,0))
-            end
-          | MPI_LONG_t => 
-            let
-                val r = Int64Array.fromList [0]
-                val status = cRecvLong (r, 1, source, tag, comm)
-            in
-                if (not (status = 0))
-                then raise MPIError (status, "Recv error")
-                else MPI_LONG (Int64Array.sub(r,0))
-            end
-          | MPI_REAL_t => 
-            let
-                val r = RealArray.fromList [0.0]
-                val status = cRecvReal (r, 1, source, tag, comm);
-            in 
-                if (not (status = 0))
-                then raise MPIError (status, "Recv error")
-                else MPI_REAL (RealArray.sub(r,0))
-            end
-          | MPI_CHAR_ARRAY_t => 
-            let
-                val (n,_,_) = Probe (source, tag, comm) 
-                val a = CharArray.array (n, Char.chr 0)
-                val status = cRecvChar (a, n, source, tag, comm)
-            in 
-                if (not (status = 0))
-                then raise MPIError (status, "Recv error")
-                else MPI_CHAR_ARRAY (a)
-            end
-          | MPI_INT_ARRAY_t => 
-            let
-                val (n,_,_) = Probe (source, tag, comm) 
-                val a = Int32Array.array (n, 0)
-                val status = cRecvInt (a, n, source, tag, comm)
-            in
-                if (not (status = 0))
-                then raise MPIError (status, "Recv error")
-                else MPI_INT_ARRAY (a)
-            end
-          | MPI_LONG_ARRAY_t => 
-            let
-                val (n,_,_) = Probe (source, tag, comm) 
-                val a = Int64Array.array (n, 0)
-                val status = cRecvLong (a, n, source, tag, comm)
-            in
-                if (not (status = 0))
-                then raise MPIError (status, "Recv error")
-                else MPI_LONG_ARRAY (a)
-            end
-          | MPI_REAL_ARRAY_t =>
-            let
-                val (n,_,_) = Probe (source, tag, comm) 
-                val a = RealArray.array (n, 0.0)
-                val status = cRecvReal (a, n, source, tag, comm)
-            in
-                if (not (status = 0))
-                then raise MPIError (status, "Recv error")
-                else MPI_REAL_ARRAY (a)
-            end
- end
+    fun Recv (source, tag, comm) =
+      let
+          val (n, _, _) = Probe (source, tag, comm)
+          val status = cRecvW32 (r, n, source, tag, comm)
+      in
+          if (not (status = 0))
+          then raise MPIError (status, "Recv error")
+          else r
+      end
 
  structure Collective =
  struct
 
 
-    val nullCharArray = CharArray.fromList []
-    val nullIntArray  = Int32Array.fromList []
-    val nullLongArray = Int64Array.fromList []
-    val nullRealArray = RealArray.fromList []
+    val cBcastW32 = _import "mlton_MPI_Bcast_Word32" : Word32Array.array * int * int * comm -> int;
 
-    val cBcastChar = _import "mlton_MPI_Bcast_char" : CharArray.array * int * int * comm -> int;
+    fun Bcast (v, root, comm) = cBcastW32 (v, root, comm)
 
-    val cBcastInt = _import "mlton_MPI_Bcast_int" : Int32Array.array * int * int * comm -> int;
-
-    val cBcastLong = _import "mlton_MPI_Bcast_long" : Int64Array.array * int * int * comm -> int;
-
-    val cBcastReal = _import "mlton_MPI_Bcast_double" : RealArray.array * int * int * comm -> int;
-
-    fun Bcast (v, root, comm) =
-        case v of
-            MPI_CHAR c => cBcastChar (CharArray.fromList [c], 1, root, comm)
-          | MPI_CHAR_ARRAY a => cBcastChar (a, CharArray.length a, root, comm)
-          | MPI_INT i => cBcastInt (Int32Array.fromList [i], 1, root, comm)
-          | MPI_INT_ARRAY a => cBcastInt (a, Int32Array.length a, root, comm)
-          | MPI_LONG i => cBcastLong (Int64Array.fromList [i], 1, root, comm)
-          | MPI_LONG_ARRAY a => cBcastLong (a, Int64Array.length a, root, comm)
-          | MPI_REAL i => cBcastReal (RealArray.fromList [i], 1, root, comm)
-          | MPI_REAL_ARRAY a => cBcastReal (a, RealArray.length a, root, comm)
-
-    val cScatterChar = _import "mlton_MPI_Scatter_char"   : CharArray.array * int * CharArray.array * int * int * comm -> int;
-
-    val cScatterInt  = _import "mlton_MPI_Scatter_int"    : Int32Array.array * int * Int32Array.array * int * int * comm -> int;
-
-    val cScatterLong = _import "mlton_MPI_Scatter_long"   : Int64Array.array * int * Int64Array.array * int * int * comm -> int;
-
-    val cScatterReal = _import "mlton_MPI_Scatter_double" : RealArray.array * int * RealArray.array * int * int * comm -> int;
-
+    val cScattervW32 = _import "mlton_MPI_Scatterv_Word32"   : Word32Array.array * int * Word32Array.array * int * int * comm -> int;
 
     exception InvalidScatter
     exception InvalidScatterDataSize of int * int * int
-
-    fun sendScatter (s, sn, r, root, comm) =
-        let 
-            val nprocs = Comm.Size comm
-        in
-            case (s, r) of
-                (MPI_CHAR_ARRAY s, MPI_CHAR_ARRAY r) => 
-                let 
-                    val rn    = CharArray.length r
-                    val slen  = CharArray.length s
-                in
-                    if (nprocs * sn) <= slen
-                    then (cScatterChar (s, sn, r, rn, root, comm); 
-                          if rn = 1 then (MPI_CHAR (CharArray.sub (r,0))) else (MPI_CHAR_ARRAY r))
-                    else raise InvalidScatterDataSize (nprocs, sn, slen)
-                end
-              | (MPI_INT_ARRAY s, MPI_INT_ARRAY r) =>
-                let 
-                    val rn = Int32Array.length r
-                    val slen  = Int32Array.length s
-                in
-                    if (nprocs * sn) <= slen
-                    then (cScatterInt (s, sn, r, rn, root, comm); 
-                          if rn = 1 then (MPI_INT (Int32Array.sub (r,0))) else (MPI_INT_ARRAY r))
-                    else raise InvalidScatterDataSize (nprocs, sn, slen)
-                end
-              | (MPI_LONG_ARRAY s, MPI_LONG_ARRAY r) =>
-                let 
-                    val rn = Int64Array.length r
-                    val slen = Int64Array.length s
-                in
-                    if (nprocs * sn) <= slen
-                    then (cScatterLong (s, sn, r, rn, root, comm); 
-                          if rn = 1 then (MPI_LONG (Int64Array.sub (r,0))) else (MPI_LONG_ARRAY r))
-                    else raise InvalidScatterDataSize (nprocs, sn, slen)
-                end
-              | (MPI_REAL_ARRAY s, MPI_REAL_ARRAY r) =>
-                let 
-                    val rn = RealArray.length r
-                    val slen = RealArray.length s
-                in
-                    if (nprocs * sn) <= slen
-                    then (cScatterReal (s, sn, r, rn, root, comm); 
-                          if rn = 1 then (MPI_REAL (RealArray.sub (r,0))) else (MPI_REAL_ARRAY r))
-                    else raise InvalidScatterDataSize (nprocs, sn, slen)
-                end
-                | (_, _) => raise InvalidScatter
-        end
-
-
-    fun recvScatter (r, root, comm) =
-        let 
-            val nprocs = Comm.Size comm
-        in
-            case r of
-                MPI_CHAR_ARRAY r => 
-                let 
-                    val rn = CharArray.length r
-                in
-                    (cScatterChar (nullCharArray, 0, r, rn, root, comm); 
-                     if rn = 1 then (MPI_CHAR (CharArray.sub (r,0))) else (MPI_CHAR_ARRAY r))
-                end
-              | MPI_INT_ARRAY r => 
-                let 
-                    val rn = Int32Array.length r
-                in
-                    (cScatterInt (nullIntArray, 0, r, rn, root, comm); 
-                     if rn = 1 then (MPI_INT (Int32Array.sub (r,0))) else (MPI_INT_ARRAY r))
-                end
-              | MPI_LONG_ARRAY r => 
-                let 
-                    val rn = Int64Array.length r
-                in
-                    (cScatterLong (nullLongArray, 0, r, rn, root, comm); 
-                  if rn = 1 then (MPI_LONG (Int64Array.sub (r,0))) else (MPI_LONG_ARRAY r))
-                end
-              | MPI_REAL_ARRAY r => 
-                let 
-                    val rn = RealArray.length r
-                in
-                    (cScatterReal (nullRealArray, 0, r, rn, root, comm); 
-                     if rn = 1 then (MPI_REAL (RealArray.sub (r,0))) else (MPI_REAL_ARRAY r))
-                end
-                | _ => raise InvalidScatter
-
-        end
-
-    val cRecvScattervChar = _import "mlton_MPI_RecvScatterv_char"   : CharArray.array * int * int * comm -> int ;
-    val cSendScattervChar = _import "mlton_MPI_SendScatterv_char"   : CharArray.array * Int32Array.array  * Int32Array.array *
-                                                                      CharArray.array * int * int * comm -> int ;
-
-    val cRecvScattervInt = _import "mlton_MPI_RecvScatterv_int"   : Int32Array.array * int * int * comm -> int ;
-    val cSendScattervInt = _import "mlton_MPI_SendScatterv_int"   : Int32Array.array * Int32Array.array  * Int32Array.array *
-                                                                    Int32Array.array * int * int * comm -> int ;
-        
-    val cRecvScattervLong = _import "mlton_MPI_RecvScatterv_long"   : Int64Array.array * int * int * comm -> int ;
-    val cSendScattervLong = _import "mlton_MPI_SendScatterv_long"   : Int64Array.array * Int32Array.array  * Int32Array.array *
-                                                                      Int64Array.array * int * int * comm -> int ;
-        
-    val cRecvScattervReal = _import "mlton_MPI_RecvScatterv_double"   : RealArray.array * int * int * comm -> int ;
-    val cSendScattervReal = _import "mlton_MPI_SendScatterv_double"   : RealArray.array * Int32Array.array  * Int32Array.array *
-                                                                        RealArray.array * int * int * comm -> int ;
-        
-        
-    exception InvalidScatterv
   
               
-    fun sendScatterv (lst, root, comm) =
+    fun Scatter (lst, root, comm) =
       let 
           val nprocs = Comm.Size comm
 
-          val rootfn = fn (lst, makeArray, scatterArray, ret) =>
-                          (let 
-                               val sendlengths = List.map Array.length lst
-                               val (_,displs)  = List.foldr (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) sendlengths
-                               val sendlenarray = Int32Array.fromList sendlengths
+          val _ = assert((List.length lst) = nprocs)
+                                 
+          val sendlengths = List.map Word32Array.length lst
+          val (_,displs)  = List.foldr (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) sendlengths
                                                   
-                               (* Scatters the lengths of the buffers to all the processes *)
-                               val mylen = (case sendScatter (MPI_INT_ARRAY sendlenarray, 1,
-                                                              MPI_INT_ARRAY (Int32Array.array (1,~1)), 
-                                                              root, comm) of
-                                                MPI_INT n => n
-                                               | _ => raise InvalidScatterv)
+          (* Scatters the lengths of the buffers to all the processes *)
+          val mylen = Pickle.unpickle Pickle.int (Scatter (List.map (Pickle.pickle int) sendlengths, root, comm))
                                            
-                               val total = List.foldl (op +) 0 sendlengths
-                                           
-                               val sendbuf = makeArray total
-                                             
-                               (* Builds a single buffer with all data *)
-                               val _ = ListPair.app (fn (a,offset) => Array.copy {di=offset,dst=sendbuf,src=a})
-                                                    (lst, displs)
-                                       
-		               (* Allocates receive buffer *)
-                               val myrecv = makeArray mylen
-                                            
-                           in
-		               (* Performs the scatter & returns received value *)
-                               scatterArray (sendbuf, sendlenarray, Int32Array.fromList displs, 
-                                             myrecv, mylen, root, comm);
-                               ret myrecv
-                            end)
-                          
+	  (* Allocates receive buffer *)
+          val myrecv = Word32Array.array mylen
+                                 
       in
-          case hd lst of
-              MPI_CHAR_ARRAY _ => 
-	      (let 
-                   val ndata = List.length lst
-                   val lst'  = List.map (fn (MPI_CHAR_ARRAY a) => a | _ => raise InvalidScatterv) lst
-               in
-	           if (not (ndata = nprocs))
-                   then raise InvalidScatterDataSize (nprocs, ndata, 0)
-                   else rootfn (List.map CharArray.toPoly lst', fn (s) => Array.array (s, Char.chr 0),
-                                fn (sendbuf, sendlen, displs, myrecv, mylen, root, comm) =>
-                                   cSendScattervChar (CharArray.fromPoly sendbuf, sendlen, displs,
-                                                      CharArray.fromPoly myrecv, mylen, root, comm),
-                                MPI_CHAR_ARRAY)
-               end)
-
-            | MPI_INT_ARRAY _ => 
-	      (let 
-                   val ndata = List.length lst
-                   val lst'  = List.map (fn (MPI_INT_ARRAY a) => a | _ => raise InvalidScatterv) lst
-               in
-	           if (not (ndata = nprocs))
-                   then raise InvalidScatterDataSize (nprocs, ndata, 0)
-                   else rootfn (List.map Int32Array.toPoly lst', fn (s) => Array.array (s, ~1),
-                                fn (sendbuf, sendlen, displs, myrecv, mylen, root, comm) =>
-                                   cSendScattervInt (Int32Array.fromPoly sendbuf, sendlen, displs,
-                                                     Int32Array.fromPoly myrecv, mylen, root, comm),
-                               MPI_INT_ARRAY)
-               end)
-
-            | MPI_LONG_ARRAY _ => 
-	      (let 
-                   val ndata = List.length lst
-                   val lst'  = List.map (fn (MPI_LONG_ARRAY a) => a | _ => raise InvalidScatterv) lst
-               in
-	           if (not (ndata = nprocs))
-                   then raise InvalidScatterDataSize (nprocs, ndata, 0)
-                   else rootfn (List.map Int64Array.toPoly lst', fn (s) => Array.array (s, ~1),
-                                fn (sendbuf, sendlen, displs, myrecv, mylen, root, comm) =>
-                                   cSendScattervLong (Int64Array.fromPoly sendbuf, sendlen, displs,
-                                                     Int64Array.fromPoly myrecv, mylen, root, comm),
-                               MPI_LONG_ARRAY)
-                                
-               end)
-
-            | MPI_REAL_ARRAY _ => 
-	      (let 
-                   val ndata = List.length lst
-                   val lst'  = List.map (fn (MPI_REAL_ARRAY a) => a | _ => raise InvalidScatterv) lst
-               in
-	           if (not (ndata = nprocs))
-                   then raise InvalidScatterDataSize (nprocs, ndata, 0)
-                   else rootfn (List.map RealArray.toPoly lst', fn (s) => Array.array (s, ~1.0),
-                                fn (sendbuf, sendlen, displs, myrecv, mylen, root, comm) =>
-                                   cSendScattervReal (RealArray.fromPoly sendbuf, sendlen, displs,
-                                                      RealArray.fromPoly myrecv, mylen, root, comm),
-                               MPI_REAL_ARRAY)
-               end)
-            
-            | _ => raise InvalidScatterv
-
-      end
-
-              
-    fun recvScatterv (ty, root, comm) =
-      let 
-          val nprocs = Comm.Size comm
-
-          val nonrootfn = fn (makeArray, scatterArray, ret) =>
-                             (let 
-	                          (* If not root, get our length *)
-                                  val mylen = (case recvScatter (MPI_INT_ARRAY (Int32Array.array (1,~1)), root, comm) of
-                                                   MPI_INT i => i | _ => raise InvalidScatterv)
-
-	                          (* Allocates receive buffer *)
-                                  val myrecv = makeArray mylen
-                              in
-	                          (* Performs the scatter & returns received value *)
-	                          scatterArray (myrecv, mylen, root, comm);
-	                          ret myrecv
-                              end)
-                           
-      in
-          case ty of
-
-              MPI_CHAR_ARRAY_t => 
-	      nonrootfn (fn (s) => Array.array (s, Char.chr 0),
-                         fn (myrecv, mylen, root, comm) =>
-                            cRecvScattervChar (CharArray.fromPoly myrecv, mylen, root, comm),
-                         MPI_CHAR_ARRAY)
-
-            | MPI_INT_ARRAY_t => 
-	      nonrootfn (fn (s) => Array.array (s, ~1),
-                         fn (myrecv, mylen, root, comm) =>
-                            cRecvScattervInt (Int32Array.fromPoly myrecv, mylen, root, comm),
-                         MPI_INT_ARRAY)
-
-            | MPI_LONG_ARRAY_t => 
-	      nonrootfn (fn (s) => Array.array (s, ~1),
-                         fn (myrecv, mylen, root, comm) =>
-                            cRecvScattervLong (Int64Array.fromPoly myrecv, mylen, root, comm),
-                         MPI_LONG_ARRAY)
-                         
-            | MPI_REAL_ARRAY_t => 
-	      nonrootfn (fn (s) => RealArray.array (s, ~1.0),
-                         fn (myrecv, mylen, root, comm) =>
-                            cRecvScattervReal (RealArray.fromPoly myrecv, mylen, root, comm),
-                         MPI_REAL_ARRAY)
-            | _ => raise InvalidScatterv
-      end
+	  (* Performs the scatter & returns received value *)
+          cScattervW32 (sendbuf, Word32Array.fromList sendlengths, Word32Array.fromList displs, 
+                        myrecv, mylen, root, comm);
+          myrecv
+      end)
 
 
     val cGatherChar = _import "mlton_MPI_Gather_char"   : CharArray.array * int * CharArray.array * int * int * comm -> int;
