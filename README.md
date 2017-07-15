@@ -2,7 +2,7 @@ mpi-mlton
 ======
 
 
-MPI (http://www-unix.mcs.anl.gov/mpi/) is a popular library for
+MPI (http://www.mpi-forum.org/) is a popular standard for
 distributed-memory parallel programming. It offers both point-to-point
 message passing and group communication operations (broadcast,
 scatter/gather, etc).
