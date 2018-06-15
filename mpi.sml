@@ -9,7 +9,18 @@ structure P = MLton.Pointer
 type comm  = P.t
 type group = P.t
 
+structure WordArray = Word8Array
+structure WordArraySlice = Word8ArraySlice
+structure WordVector = Word8Vector
+structure WordVectorSlice = Word8VectorSlice
 
+
+exception AssertionFailed
+
+fun assert true = ()
+  | assert false = raise AssertionFailed
+
+                 
 val e = _export "mlton_MPI_exception": (int * int * string -> unit) -> unit;
 
 val _ = e (fn (i, len, msg) => raise MPIError (i, msg))
@@ -30,28 +41,6 @@ val Finalize   = _import "MPI_Finalize" : unit -> unit;
 val Wtime      = _import "MPI_Wtime": unit -> real ;
 
 val Barrier    = _import "MPI_Barrier" : comm -> int ;
-
-structure Utils =
-struct
-
-fun chunkSize (totalSize, nprocs, myrank) =
-  if (nprocs < 1) orelse (nprocs <= myrank)
-  then raise Overflow
-  else (if totalSize < myrank
-        then 0 
-        else (if totalSize <= nprocs
-              then 1
-              else (let 
-                       val chunkDiv = Int.div (totalSize, nprocs)
-                       val chunkRem = totalSize - nprocs * chunkDiv 
-                   in
-                       if myrank < chunkRem then chunkDiv+1 else chunkDiv
-                   end)))
-end
-    
-fun gid (lid, nprocs, myrank) = myrank + nprocs * lid
-                                                      
-end
  
  structure Comm =
  struct
@@ -293,279 +282,185 @@ end
         end
 
 
-    val cSendW32 = _import "mlton_MPI_Send_Word32" : Word32Array.array * int * int * int * comm -> int;
+    val cSendW8 = _import "mlton_MPI_Send_Word8" : WordVector.vector * int * int * int * comm -> int;
 
-    fun Send (buf, dest, tag, comm) = cSendW32 (buf, Word32Array.length buf, dest, tag, comm)
+    val cRecvW8 = _import "mlton_MPI_Recv_Word8" : WordArray.array * int * int * int * comm -> int;
 
-    val cRecvW32 = _import "mlton_MPI_Recv_Word32" : Word32Array.array * int * int * int * comm -> int;
 
-    fun Recv (source, tag, comm) =
+    fun Send (pu: 'a Pickle.pu) (data: 'a, dest, tag, comm) =
+      let
+          val buf = Pickle.pickle pu data
+          val n = WordVector.length buf
+      in
+          cSendW8 (buf, n, dest, tag, comm)
+      end
+
+    fun Recv (pu: 'a Pickle.pu) (source, tag, comm) =
       let
           val (n, _, _) = Probe (source, tag, comm)
-          val status = cRecvW32 (r, n, source, tag, comm)
+          val r = WordArray.array (n, 0w0)
+          val status = cRecvW8 (r, n, source, tag, comm)
       in
           if (not (status = 0))
           then raise MPIError (status, "Recv error")
-          else r
+          else Pickle.unpickle pu (WordArray.vector r)
       end
-
+ end
+     
  structure Collective =
  struct
 
 
-    val cBcastW32 = _import "mlton_MPI_Bcast_Word32" : Word32Array.array * int * int * comm -> int;
+    val cBcastW8 = _import "mlton_MPI_Bcast_Word8" : WordVector.vector * int * int * comm -> int;
 
-    fun Bcast (v, root, comm) = cBcastW32 (v, root, comm)
 
-    val cScattervW32 = _import "mlton_MPI_Scatterv_Word32"   : Word32Array.array * int * Word32Array.array * int * int * comm -> int;
+    val cScatterW8 = _import "mlton_MPI_Scatter_Word8"   : WordVector.vector * int * WordArray.array * int * int * comm -> int;
+
+    val cScattervW8 = _import "mlton_MPI_Scatterv_Word8"   : WordVector.vector * IntArray.array * IntArray.array * WordArray.array * int * int * comm -> int;
+
+    val cGatherW8 = _import "mlton_MPI_Gather_Word8"   : WordVector.vector * int * WordArray.array * int * int * comm -> int;
+
+    val cGathervW8 = _import "mlton_MPI_Gatherv_Word8"   : WordVector.vector * int * WordArray.array * IntArray.array * IntArray.array * int * comm -> int;
 
     exception InvalidScatter
     exception InvalidScatterDataSize of int * int * int
-  
-              
-    fun Scatter (lst, root, comm) =
-      let 
-          val nprocs = Comm.Size comm
-
-          val _ = assert((List.length lst) = nprocs)
-                                 
-          val sendlengths = List.map Word32Array.length lst
-          val (_,displs)  = List.foldr (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) sendlengths
-                                                  
-          (* Scatters the lengths of the buffers to all the processes *)
-          val mylen = Pickle.unpickle Pickle.int (Scatter (List.map (Pickle.pickle int) sendlengths, root, comm))
-                                           
-	  (* Allocates receive buffer *)
-          val myrecv = Word32Array.array mylen
-                                 
-      in
-	  (* Performs the scatter & returns received value *)
-          cScattervW32 (sendbuf, Word32Array.fromList sendlengths, Word32Array.fromList displs, 
-                        myrecv, mylen, root, comm);
-          myrecv
-      end)
-
-
-    val cGatherChar = _import "mlton_MPI_Gather_char"   : CharArray.array * int * CharArray.array * int * int * comm -> int;
-
-    val cGatherInt  = _import "mlton_MPI_Gather_int"    : Int32Array.array * int * Int32Array.array * int * int * comm -> int;
-
-    val cGatherLong = _import "mlton_MPI_Gather_long"   : Int64Array.array * int * Int64Array.array * int * int * comm -> int;
-
-    val cGatherReal = _import "mlton_MPI_Gather_double" : RealArray.array * int * RealArray.array * int * int * comm -> int;
 
     exception InvalidGather
     exception InvalidGatherDataSize of int * int * int
 
-    fun recvGather (r, rn, s, root, comm) =
-        let 
-            val nprocs = Comm.Size comm
-        in
-            case (r, s) of
-                (MPI_CHAR_ARRAY r, MPI_CHAR_ARRAY s) => 
-                let 
-                    val sn    = CharArray.length s
-                    val rlen  = CharArray.length r
-                in
-                    if (nprocs * rn) <= rlen
-                    then (cGatherChar (s, sn, r, rn, root, comm); 
-                           (MPI_CHAR_ARRAY r))
-                    else raise InvalidGatherDataSize (nprocs, rn, rlen)
-                end
-              | (MPI_INT_ARRAY r, MPI_INT_ARRAY s) => 
-                let 
-                    val sn = Int32Array.length s
-                    val rlen  = Int32Array.length r
-                in
-                    if (nprocs * rn) <= rlen
-                    then (cGatherInt (s, sn, r, rn, root, comm); 
-                          (MPI_INT_ARRAY r))
-                    else raise InvalidGatherDataSize (nprocs, rn, rlen)
-                end
-              | (MPI_LONG_ARRAY r, MPI_LONG_ARRAY s) => 
-                let 
-                    val sn = Int64Array.length s
-                    val rlen = Int64Array.length r
-                in
-                    if (nprocs * rn) <= rlen
-                    then (cGatherLong (s, sn, r, rn, root, comm); 
-                          (MPI_LONG_ARRAY r))
-                    else raise InvalidGatherDataSize (nprocs, rn, rlen)
-                end
-              | (MPI_REAL_ARRAY r, MPI_REAL_ARRAY s) =>
-                let 
-                    val sn = RealArray.length s
-                    val rlen = RealArray.length r
-                in
-                    if (nprocs * rn) <= rlen
-                    then (cGatherReal (s, sn, r, rn, root, comm); 
-                          (MPI_REAL_ARRAY r))
-                    else raise InvalidScatterDataSize (nprocs, rn, rlen)
-                end
-              | (_, _) => raise InvalidGather
-
-    end
-
-    fun sendGather (s, root, comm) =
-        let 
-            val nprocs = Comm.Size comm
-        in
-            case s of
-                MPI_CHAR_ARRAY s => 
-                let 
-                    val sn = CharArray.length s
-                in
-                    cGatherChar (s, sn, nullCharArray, 0, root, comm)
-                end
-              | MPI_INT_ARRAY s => 
-                let 
-                    val sn = Int32Array.length s
-                in
-                    cGatherInt (s, sn, nullIntArray, 0, root, comm)
-                end
-              | MPI_LONG_ARRAY s => 
-                let 
-                    val sn = Int64Array.length s
-                in
-                    cGatherLong (s, sn, nullLongArray, 0, root, comm)
-                end
-              | MPI_REAL_ARRAY s =>
-                let 
-                    val sn = RealArray.length s
-                in
-                    cGatherReal (s, sn, nullRealArray, 0, root, comm)
-                end
-              | _ => raise InvalidGather
-    end
-
-
-    val cSendGathervChar = _import "mlton_MPI_SendGatherv_char"   : CharArray.array * int * int * comm -> int;
-    val cRecvGathervChar = _import "mlton_MPI_RecvGatherv_char"   : CharArray.array * int * CharArray.array * Int32Array.array * Int32Array.array * int * comm -> int;
-            
-    val cSendGathervInt = _import "mlton_MPI_SendGatherv_int"   : Int32Array.array * int * int * comm -> int;
-    val cRecvGathervInt = _import "mlton_MPI_RecvGatherv_int"   : Int32Array.array * int * Int32Array.array * Int32Array.array * Int32Array.array * int * comm -> int;
-
-    val cSendGathervLong = _import "mlton_MPI_SendGatherv_long"   : Int64Array.array * int * int * comm -> int;
-    val cRecvGathervLong = _import "mlton_MPI_RecvGatherv_long"   : Int64Array.array * int * Int64Array.array * Int32Array.array * Int32Array.array * int * comm -> int;
-
-    val cSendGathervReal = _import "mlton_MPI_SendGatherv_double"   : RealArray.array * int * int * comm -> int;
-    val cRecvGathervReal = _import "mlton_MPI_RecvGatherv_double"   : RealArray.array * int * RealArray.array * Int32Array.array * Int32Array.array * int * comm -> int;
-            
-    exception InvalidGatherv
-  
-              
-    fun recvGatherv (s, root, comm) =
-      let 
-          val nprocs = Comm.Size comm
-
-          val rootfn = fn (sendbuf, makeArray, gatherArray, ret) =>
-                          (let 
-                              val mylen = Array.length sendbuf
-
-                              (* Gather the lengths of the buffers from all processes *)
-                              val recvlengths = case recvGather (MPI_INT_ARRAY (Int32Array.array (nprocs, ~1)),
-                                                                 1, MPI_INT_ARRAY (Int32Array.array (1,mylen)),
-                                                                 root, comm) of
-                                                    (MPI_INT_ARRAY a) => a
-                                                  | _ => raise InvalidGatherv
-                                                    
-                                                    
-                              val displs  = List.rev (#2(Int32Array.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) recvlengths))
-     
-                              val total = Int32Array.foldl (op +) 0 recvlengths
-                                                     
-		              (* Allocates receive buffer *)
-                              val recvbuf = makeArray total
-
-                              (* Gather the data *)
-                              val _ = gatherArray (sendbuf, mylen, 
-                                                   recvbuf, recvlengths, Int32Array.fromList displs, 
-                                                   root, comm);
-                          in
-                              (ret recvbuf, recvlengths)
-                          end)
-                           
+    fun Bcast  (pu: 'a Pickle.pu) (data, root, comm) =
+      let val buf = Pickle.pickle pu data
       in
-          case s of
-              MPI_CHAR_ARRAY s =>
-              rootfn (s, fn (s) => Array.array (s, Char.chr 0),
-                      fn (sendbuf, sendlen, recvbuf, recvlen, displs, root, comm) =>
-                         cRecvGathervChar (CharArray.fromPoly sendbuf, sendlen, 
-                                           CharArray.fromPoly recvbuf, recvlen, displs, 
-                                           root, comm),
-                      MPI_CHAR_ARRAY)
-
-            | MPI_INT_ARRAY s => 
-              rootfn (s, fn (s) => Array.array (s, ~1),
-                      fn (sendbuf, sendlen, recvbuf, recvlen, displs, root, comm) =>
-                         cRecvGathervInt (Int32Array.fromPoly sendbuf, sendlen, 
-                                          Int32Array.fromPoly recvbuf, recvlen, displs,
-                                          root, comm),
-                      MPI_INT_ARRAY)
-
-            | MPI_LONG_ARRAY s =>
-              rootfn (s, fn (s) => Array.array (s, ~1),
-                      fn (sendbuf, sendlen, recvbuf, recvlen, displs, root, comm) =>
-                         cRecvGathervLong (Int64Array.fromPoly sendbuf, sendlen, 
-                                           Int64Array.fromPoly recvbuf, recvlen, displs,
-                                           root, comm),
-                      MPI_LONG_ARRAY)
-                                
-            | MPI_REAL_ARRAY s =>
-              rootfn (s, fn (s) => Array.array (s, ~1.0),
-                      fn (sendbuf, sendlen, recvbuf, recvlen, displs, root, comm) =>
-                         cRecvGathervReal (RealArray.fromPoly sendbuf, sendlen, 
-                                           RealArray.fromPoly recvbuf, recvlen, displs,
-                                           root, comm),
-                      MPI_REAL_ARRAY)
-
-            | _ => raise InvalidGatherv
-
+          cBcastW8 (buf, WordVector.length buf, root, comm)
       end
 
               
-    fun sendGatherv (s, root, comm) =
+    fun Scatter (pu: 'a Pickle.pu) (lst: 'a list, root, comm): 'a =
       let 
           val nprocs = Comm.Size comm
-                          
-          val nonrootfn = fn (sendbuf, makeArray, gatherArray) =>
-                             (let 
-	                          (* If not root, get our length and send it to root *)
-                                 val mylen = Array.length sendbuf
-                                                          
-                                 val _ = sendGather (MPI_INT_ARRAY (Int32Array.array (1,mylen)), root, comm)
-                              in
-	                          (* Performs the gather *)
-	                          gatherArray (sendbuf, mylen, root, comm)
-                              end)
-                           
+
+          val _ = assert((List.length lst) = nprocs)
+
+          val pkls = List.map (Pickle.pickle pu) lst
+          val sendlength = WordVector.length (hd pkls)
+                                           
+	  (* Allocates receive buffer *)
+          val myrecvbuf = WordArray.array (sendlength, 0w0)
+
+          (* Allocates and fills send buffer *)
+          val sendbuf = WordVectorSlice.concat (List.map (fn(v) => (WordVectorSlice.slice (v,0,SOME sendlength))) pkls)
+                                 
       in
-          case s of
-              MPI_CHAR_ARRAY s => 
-	      nonrootfn (s, fn (s) => Array.array (s, Char.chr 0),
-                         fn (sendbuf, sendlen, root, comm) =>
-                            cSendGathervChar (CharArray.fromPoly sendbuf, sendlen, root, comm))
-
-            | MPI_INT_ARRAY s =>
-	      nonrootfn (s, fn (s) => Array.array (s, ~1),
-                         fn (sendbuf, sendlen, root, comm) =>
-                            cSendGathervInt (Int32Array.fromPoly sendbuf, sendlen, root, comm))
-
-            | MPI_LONG_ARRAY s =>
-	      nonrootfn (s, fn (s) => Array.array (s, ~1),
-                         fn (sendbuf, sendlen, root, comm) =>
-                            cSendGathervLong (Int64Array.fromPoly sendbuf, sendlen, root, comm))
-
-            | MPI_REAL_ARRAY s =>
-	      nonrootfn (s, fn (s) => RealArray.array (s, ~1.0),
-                         fn (sendbuf, sendlen, root, comm) =>
-                            cSendGathervReal (RealArray.fromPoly sendbuf, sendlen, root, comm))
-
-            | _ => raise InvalidGatherv
+	  (* Performs the scatter & returns received value *)
+          cScatterW8 (sendbuf, sendlength, myrecvbuf, sendlength, root, comm);
+          Pickle.unpickle pu (WordArray.vector myrecvbuf)
       end
+
+    fun Scatterv (pu: 'a Pickle.pu) (lst: 'a list, root, comm): 'a =
+      let 
+          val nprocs = Comm.Size comm
+
+          val _ = assert((List.length lst) = nprocs)
+
+          val pkls = List.map (Pickle.pickle pu) lst
+          val sendlengths = List.map WordVector.length pkls
+          val (_,displs)  = List.foldr (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) sendlengths
+                                                  
+          (* Scatters the lengths of the buffers to all the processes *)
+          val mylen = Scatter Pickle.int (sendlengths, root, comm)
+                                           
+	  (* Allocates receive buffer *)
+          val myrecvbuf = WordArray.array (mylen, 0w0)
+
+          (* Allocates and fills send buffer *)
+          val sendbuf = WordVectorSlice.concat (List.map (fn(v) => (WordVectorSlice.slice (v,0,NONE))) pkls)
+                                 
+      in
+	  (* Performs the scatter & returns received value *)
+          cScattervW8 (sendbuf, IntArray.fromList sendlengths, IntArray.fromList displs, 
+                       myrecvbuf, mylen, root, comm);
+          Pickle.unpickle pu (WordArray.vector myrecvbuf)
+      end
+
+    fun Gather (pu: 'a Pickle.pu) (data: 'a, root, comm) =
+      let 
+          val nprocs = Comm.Size comm
+          val myrank = Comm.Rank comm
+          val mydata = Pickle.pickle pu data
+          val mylen  = WordVector.length mydata
+      in
+          if myrank = root
+          then
+              (let
+                  (* Allocate receive buffer *)
+                  val recvbuf = WordArray.array (mylen * nprocs, 0w0)
+                  (* Gather the data *)
+                  val _ = cGatherW8 (mydata, mylen, recvbuf, mylen, root, comm)
+                  (* Build a list of results and return *)
+                  val uf = Pickle.unpickle pu
+                  val results = List.tabulate
+                                    (nprocs,
+                                     fn(i) =>
+                                        let
+                                            val offset = i*mylen
+                                            val s = WordArraySlice.slice (recvbuf, offset, SOME(offset+mylen))
+                                        in
+                                            uf (WordArraySlice.vector s)
+                                        end)
+              in
+                  results
+              end)
+          else
+              (let
+                  val recvbuf = WordArray.array (0, 0w0)                  
+                  val _ = cGatherW8 (mydata, mylen, recvbuf, mylen, root, comm)
+              in
+                  []
+              end)
+              
+      end
+
+    fun Gatherv (pu: 'a Pickle.pu) (data: 'a, root, comm) =
+      let 
+          val nprocs = Comm.Size comm
+          val myrank = Comm.Rank comm
+          val mydata = Pickle.pickle pu data
+          val mylen  = WordVector.length mydata
+          val recvlengths = Gather Pickle.int (mylen, root, comm)
+      in
+          if myrank = root
+          then
+              (let
+                  (* Gather the data *)
+                  val recvbuf = WordArray.array (List.foldl (op +) 0 recvlengths, 0w0)
+                  val (_,displs)  = List.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) recvlengths
+                  val _ = cGathervW8 (mydata, mylen, recvbuf, IntArray.fromList recvlengths,
+                                     IntArray.fromList displs, root, comm)
+                  (* Build a list of results and return *)
+                  val uf = Pickle.unpickle pu
+                  val (results,_) = List.foldr
+                                        (fn(count,(ax,offset)) =>
+                                                 let
+                                                     val s = WordArraySlice.slice (recvbuf, offset, SOME(offset+count))
+                                                 in
+                                                     ((uf (WordArraySlice.vector s))::ax, offset+count)
+                                                 end)
+                                        ([],0) recvlengths  
+              in
+                  results
+              end)
+          else
+              (* If not root, send our length *)
+              (let
+                  val recvbuf = WordArray.array (0, 0w0)                  
+                  val _ = cGathervW8 (mydata, mylen, recvbuf, IntArray.fromList [],
+                                      IntArray.fromList [], root, comm)
+              in
+                  []
+              end)
+              
+      end
+
  end
+
 end
-
-
-
-

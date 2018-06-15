@@ -11,6 +11,8 @@ structure Pickle :> PICKLE = (* was : *)
     val debug_p = false
     val comments_p = false
 
+    type pickled = Word8Vector.vector
+
     structure S = Bitstream
     structure H = Polyhash
     structure Dyn = EqHashDyn
@@ -1004,18 +1006,18 @@ structure Pickle :> PICKLE = (* was : *)
         let val _ = TableFactory.reset();
             val os = S.openOut()
             val os = pickler pu v os
-        in S.toString os
+        in S.toBytes os
         end
 
     fun unpickle pu s =
         let val _ = TableFactory.reset()
-            val (v, _) = unpickler pu (S.openIn s, empty_hce())
+            val (v, _) = unpickler pu (S.openInBytes s, empty_hce())
         in v
         end
 
     fun unpickle' pu hce s =
         let val _ = TableFactory.reset()
-            val (v, (_,hce)) = unpickler pu (S.openIn s,hce)
+            val (v, (_,hce)) = unpickler pu (S.openInBytes s,hce)
         in (v, hce)
         end
 

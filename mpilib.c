@@ -94,7 +94,7 @@ void mlton_MPI_probe (int *status_count, int *status_source, int *status_tag,
   MPI_Status status;
   
   MPI_Probe(source, tag, comm, &status);
-  MPI_Get_count(&status, MPI_UINT32, status_count);
+  MPI_Get_count(&status, MPI_UINT8_T, status_count);
 
   *status_source = status.MPI_SOURCE;
 
@@ -102,45 +102,70 @@ void mlton_MPI_probe (int *status_count, int *status_source, int *status_tag,
 }
 
 
-int mlton_MPI_Recv_Word32 (uint32_t *v, size_t n, int source, int tag, MPI_Comm comm)
+int mlton_MPI_Recv_Word8 (uint8_t *v, size_t n, int source, int tag, MPI_Comm comm)
 {
-   return MPI_Recv(v, n, MPI_UINT32, source, tag, comm, MPI_STATUS_IGNORE);
+   return MPI_Recv(v, n, MPI_UINT8_T, source, tag, comm, MPI_STATUS_IGNORE);
 }
 
 
-int mlton_MPI_Send_Word32 (uint32_t *v, size_t n, int dest, int tag, MPI_Comm comm)
+int mlton_MPI_Send_Word8 (uint8_t *v, size_t n, int dest, int tag, MPI_Comm comm)
 {
   int status;
-  status = MPI_Send(v, n, MPI_UINT32, dest, tag, comm);
+  status = MPI_Send(v, n, MPI_UINT8_T, dest, tag, comm);
   return status;
 }
 
 
-int mlton_MPI_Bcast_Word32 (uint32_t *v, size_t n, int root, MPI_Comm comm)
+int mlton_MPI_Bcast_Word8 (uint8_t *v, size_t n, int root, MPI_Comm comm)
 {
-  return MPI_Bcast(v, n, MPI_UINT32, root, comm);
+  return MPI_Bcast(v, n, MPI_UINT8_T, root, comm);
 }
 
 
-int mlton_MPI_Scatterv_Word32 (uint32_t *sendbuf, int *sendcounts, int *displs, 
-                               uint32_t *recvbuf, int nrecv, int root, MPI_Comm comm)
+int mlton_MPI_Scatter_Word8 (uint8_t *sendbuf, int sendcount, 
+                             uint8_t *recvbuf, int nrecv, int root, MPI_Comm comm)
 {
   int result;
 
-  result = MPI_Scatterv (sendbuf, sendcounts, displs, MPI_UINT32,
-                         recvbuf, nrecv, MPI_UINT32,
+  result = MPI_Scatter (sendbuf, sendcount, MPI_UINT8_T,
+                        recvbuf, nrecv, MPI_UINT8_T,
+                        root, comm);
+
+  return result;
+   
+}
+
+
+int mlton_MPI_Scatterv_Word8 (uint8_t *sendbuf, int *sendcounts, int *displs, 
+                               uint8_t *recvbuf, int nrecv, int root, MPI_Comm comm)
+{
+  int result;
+
+  result = MPI_Scatterv (sendbuf, sendcounts, displs, MPI_UINT8_T,
+                         recvbuf, nrecv, MPI_UINT8_T,
                          root, comm);
 
   return result;
    
 }
 
-int mlton_MPI_Gatherv_Word32 (uint32_t *sendbuf, size_t sn, uint32_t *recvbuf, 
+int mlton_MPI_Gather_Word8 (uint8_t *sendbuf, size_t sn, uint8_t *recvbuf, 
+                            int recvcount, int root, MPI_Comm comm)
+{
+  int result; 
+
+  result = MPI_Gather(sendbuf, sn, MPI_UINT8_T, recvbuf, recvcount, MPI_UINT8_T, root, comm);
+
+  return result;
+}
+
+
+int mlton_MPI_Gatherv_Word8 (uint8_t *sendbuf, size_t sn, uint8_t *recvbuf, 
                               int *recvcounts, int *displs, int root, MPI_Comm comm)
 {
   int result; 
 
-  result = MPI_Gatherv(sendbuf, sn, MPI_UINT32, recvbuf, recvcounts, displs, MPI_UINT32, root, comm);
+  result = MPI_Gatherv(sendbuf, sn, MPI_UINT8_T, recvbuf, recvcounts, displs, MPI_UINT8_T, root, comm);
 
   return result;
 }

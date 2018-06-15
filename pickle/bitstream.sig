@@ -47,8 +47,10 @@ signature BITSTREAM =
     val getcw32   : instream -> Word32.word * instream
 
     val toString  : outstream -> string
+    val toBytes   : outstream -> Word8Vector.vector
     val openOut   : unit -> outstream
     val openIn    : string -> instream
+    val openInBytes    : Word8Vector.vector -> instream
   end
 
 (* [outw1(w,os)] output the one bit w&0w1 to the stream os.

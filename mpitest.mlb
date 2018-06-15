@@ -2,6 +2,6 @@ ann "allowFFI true" in
 $(SML_LIB)/basis/basis.mlb
 $(SML_LIB)/basis/build/sources.mlb
 $(SML_LIB)/basis/mlton.mlb
-mpi.sml
+mpi.mlb
 mpitest.sml
 end

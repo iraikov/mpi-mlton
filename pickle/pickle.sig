@@ -7,12 +7,14 @@ signature PICKLE =
   sig
     type 'a pu
 
-    val pickle    : 'a pu -> 'a -> string
-    val unpickle  : 'a pu -> string -> 'a
+    type pickled = Word8Vector.vector
+                     
+    val pickle    : 'a pu -> 'a -> pickled
+    val unpickle  : 'a pu -> pickled -> 'a
 
     type hce
     val empty_hce : unit -> hce
-    val unpickle' : 'a pu -> hce -> string -> 'a * hce
+    val unpickle' : 'a pu -> hce -> pickled -> 'a * hce
 
     val word      : word pu
     val word32    : Word32.word pu

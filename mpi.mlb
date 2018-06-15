@@ -3,8 +3,10 @@ local
 $(SML_LIB)/basis/basis.mlb
 $(SML_LIB)/basis/build/sources.mlb
 $(SML_LIB)/basis/mlton.mlb
+./pickle/pickle.mlb
 mpi.sml
 in
+        structure Pickle
         structure MPI
 end
 end
