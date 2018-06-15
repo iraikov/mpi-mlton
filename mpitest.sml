@@ -24,17 +24,15 @@ fun showIntArray (v) =
             
 
 
-fun testSendRecv (recvdata, transf, data) =
-    (if (myrank = 0)
+fun testSendRecv (pu,data,transf) =
+    if (myrank = 0)
      then 
         (let
-            val _ = mpiPrintLn ("testSendRecv: data length = " ^ (Int.toString (List.length data)) ^ 
-                                " " ^ " size = " ^ (Int.toString size))
             fun sendloop (lst, i) =
                 if (not (List.null lst)) andalso (i < size)
                 then
 		    (mpiPrintLn ("sending data to " ^ (Int.toString i));
-		     MPI.Message.Send (Pickle.string) (hd lst, i, 0, MPI.Comm.World);
+		     MPI.Message.Send pu (hd lst, i, 0, MPI.Comm.World);
 		     sendloop (tl lst, i+1))
                 else ()
 
@@ -42,7 +40,7 @@ fun testSendRecv (recvdata, transf, data) =
 		if ((i - 1) > 0)
                 then 
 		    (let
-                        val x = recvdata (i-1, 0, MPI.Comm.World)
+                        val x = MPI.Message.Recv pu (i-1, 0, MPI.Comm.World)
 			 (*(test-assert (any (lambda (y) (equal? x y)) (map transf data)))*)
                     in
 			recvloop (i-1)
@@ -55,36 +53,31 @@ fun testSendRecv (recvdata, transf, data) =
         end)
     else 
 	(let
-            val x = recvdata (0, 0, MPI.Comm.World)
+            val x = MPI.Message.Recv pu (0, 0, MPI.Comm.World)
              (*(test-assert (member x data))*)
 	    val y = transf x
         in
-	    MPI.Message.Send (Pickle.string) (y, 0, 0, MPI.Comm.World);
+	    MPI.Message.Send pu (y, 0, 0, MPI.Comm.World);
             ()
-        end);
-     MPI.Barrier (MPI.Comm.World))
+        end)
 
 
-fun testBcast (data, len, make) =
-    (if (myrank = 0)
-     then (let
-              val _ = mpiPrintLn ("broadcasting data")
-              val result = MPI.Collective.Bcast (Pickle.string) (data, 0, MPI.Comm.World)
-          in
-              assert (result = 0)
-          end)
-     else (let
-              val _ = mpiPrintLn ("receiving broadcast data")
-              val a = make len
-              val result = MPI.Collective.Bcast (Pickle.string) (a, 0, MPI.Comm.World)
-          in
-              assert (result = 0);
-              mpiPrintLn ("received broadcast: " ^ a)
-          end);
-     MPI.Barrier (MPI.Comm.World))
-(*
-fun testScatter (data, len, make, toString) =
-    (if (myrank = 0)
+fun testBcast data =
+    if (myrank = 0)
+    then (let
+             val _ = mpiPrintLn ("broadcasting data")
+             val result = MPI.Collective.Bcast (Pickle.string) (SOME data, 0, MPI.Comm.World)
+         in
+             ()
+         end)
+    else (let
+             val _ = mpiPrintLn ("receiving broadcast data")
+             val result = MPI.Collective.Bcast (Pickle.string) (NONE, 0, MPI.Comm.World)
+         in
+             mpiPrintLn ("received broadcast: " ^ result)
+         end)
+(*        
+fun testScatter (data, len, make) =
      then (let val _ = mpiPrintLn ("scatter send: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
                val a = make len
                val a = MPI.Collective.sendScatter (data, len, a, 0, MPI.Comm.World)
@@ -228,13 +221,13 @@ val _ =
 	      MPI.Message.Send (Pickle.string) (r2', Int.mod (myrank + 1, size), tag2, MPI.Comm.World);
               ())
          end))
-(*
+
 val _ = MPI.Barrier MPI.Comm.World
 
 
 
-val intdata  = List.tabulate (size, fn (i) => MPI.MPI_INT (10 * i))
-val realdata = List.tabulate (size, fn (i) => MPI.MPI_REAL (Real.* (0.1, Real.fromInt i)))
+val intdata  = List.tabulate (size, fn (i) => (10 * i))
+val realdata = List.tabulate (size, fn (i) => (Real.* (0.1, Real.fromInt i)))
 val vsize    = 3
 val vsdata   = List.tabulate (size, fn (i) => (String.implode 
                                                    (List.tabulate
@@ -245,15 +238,13 @@ val vvsdata   = List.tabulate (size, fn (i) => (String.implode
                                                          (vsize+i,
 							  (fn (j) => (Char.chr (i + 97)))))))
 
-val _ = testSendRecv (fn(src,tag,comm) => MPI.Message.Recv(MPI.MPI_INT_t,src,tag,comm),
-                      fn (MPI.MPI_INT x) => MPI.MPI_INT (1 + x), intdata)
-val _ = testSendRecv (fn(src,tag,comm) => MPI.Message.Recv(MPI.MPI_REAL_t,src,tag,comm),
-                      fn (MPI.MPI_REAL x) => MPI.MPI_REAL (Real.* (2.0, x)), realdata)
+val _ = testSendRecv (Pickle.int, intdata, fn(x) => x+1)
 
-val _ = testBcast (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode ("Hello!"))),
-                   6, fn(len) => MPI.MPI_CHAR_ARRAY (CharArray.array (len, Char.chr 0)),
-                   charArrayString)
+val _ = testSendRecv (Pickle.real, realdata, fn(x) => Real.+(x,1.0))
 
+val _ = testBcast "Hello!"
+
+(*
 val _ = testScatter (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (String.concat vsdata))),
                      String.size (String.concat vsdata) div size,
                      fn(len) => MPI.MPI_CHAR_ARRAY (CharArray.array (len, Char.chr 0)),

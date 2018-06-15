@@ -2,6 +2,8 @@
 #include <mpi.h>
 #include "mpiexport.h"
 
+typedef int rank_t;
+
 static void mlton_MPI_error_handler (MPI_Comm * comm, int * errcode, ...)
 {
   char errmsg[MPI_MAX_ERROR_STRING + 1];
@@ -116,9 +118,17 @@ int mlton_MPI_Send_Word8 (uint8_t *v, size_t n, int dest, int tag, MPI_Comm comm
 }
 
 
-int mlton_MPI_Bcast_Word8 (uint8_t *v, size_t n, int root, MPI_Comm comm)
+int mlton_MPI_Bcast_Word8 (uint8_t *v, size_t n, uint8_t *out, int root, MPI_Comm comm)
 {
-  return MPI_Bcast(v, n, MPI_UINT8_T, root, comm);
+  int status = 0;
+  rank_t myrank;
+  MPI_Comm_rank(comm, &myrank);
+  if (myrank == root)
+    {
+      memcpy(out, v, sizeof(*v)*n);
+    }
+  status = MPI_Bcast(out, n, MPI_UINT8_T, root, comm);
+  return status;
 }
 
 

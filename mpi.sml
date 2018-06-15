@@ -311,7 +311,7 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
  struct
 
 
-    val cBcastW8 = _import "mlton_MPI_Bcast_Word8" : WordVector.vector * int * int * comm -> int;
+    val cBcastW8 = _import "mlton_MPI_Bcast_Word8" : WordVector.vector * int * WordArray.array * int * comm -> int;
 
 
     val cScatterW8 = _import "mlton_MPI_Scatter_Word8"   : WordVector.vector * int * WordArray.array * int * int * comm -> int;
@@ -329,10 +329,40 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
     exception InvalidGatherDataSize of int * int * int
 
     fun Bcast  (pu: 'a Pickle.pu) (data, root, comm) =
-      let val buf = Pickle.pickle pu data
+      let
+          val myrank = Comm.Rank comm
       in
-          cBcastW8 (buf, WordVector.length buf, root, comm)
+          if myrank = root
+          then
+              (let
+                  val input   = valOf data
+                  val buf     = Pickle.pickle pu input
+                  val szbuf   = Pickle.pickle Pickle.int (WordVector.length buf)
+                  val recvbuf = WordArray.array(WordVector.length szbuf, 0w0)
+                  val status  = cBcastW8 (szbuf, WordVector.length szbuf, recvbuf, root, comm)
+                  val _       = assert (status = 0)
+                  val sz      = Pickle.unpickle Pickle.int (WordArray.vector recvbuf)
+                  val recvbuf = WordArray.array(sz, 0w0)
+                  val status  = cBcastW8 (buf, sz, recvbuf, root, comm)
+                  val _       = assert (status = 0)
+              in
+                  Pickle.unpickle pu (WordArray.vector recvbuf)
+              end)
+          else (let
+                  val szbuf   = Pickle.pickle Pickle.int 0
+                  val recvbuf = WordArray.array(WordVector.length szbuf, 0w0)
+                  val status  = cBcastW8 (szbuf, WordVector.length szbuf, recvbuf, root, comm)
+                  val _       = assert (status = 0)
+                  val sz      = Pickle.unpickle Pickle.int (WordArray.vector recvbuf)
+                  val recvbuf = WordArray.array(sz, 0w0)
+                  val status  = cBcastW8 (szbuf, sz, recvbuf, root, comm)
+                  val _       = assert (status = 0)
+               in
+                   Pickle.unpickle pu (WordArray.vector recvbuf)
+               end)
       end
+                                            
+                                         
 
               
     fun Scatter (pu: 'a Pickle.pu) (lst: 'a list, root, comm): 'a =
