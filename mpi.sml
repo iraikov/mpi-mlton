@@ -35,7 +35,8 @@ fun Init (args) =
   in
       cInit (argc, argv, argvsz)
   end
-      
+
+val Success    = 0
 val Finalize   = _import "MPI_Finalize" : unit -> unit;
 
 val Wtime      = _import "MPI_Wtime": unit -> real ;
@@ -340,11 +341,11 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
                   val szbuf   = Pickle.pickle Pickle.int (WordVector.length buf)
                   val recvbuf = WordArray.array(WordVector.length szbuf, 0w0)
                   val status  = cBcastW8 (szbuf, WordVector.length szbuf, recvbuf, root, comm)
-                  val _       = assert (status = 0)
+                  val _       = assert (status = Success)
                   val sz      = Pickle.unpickle Pickle.int (WordArray.vector recvbuf)
                   val recvbuf = WordArray.array(sz, 0w0)
                   val status  = cBcastW8 (buf, sz, recvbuf, root, comm)
-                  val _       = assert (status = 0)
+                  val _       = assert (status = Success)
               in
                   Pickle.unpickle pu (WordArray.vector recvbuf)
               end)
@@ -352,11 +353,11 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
                   val szbuf   = Pickle.pickle Pickle.int 0
                   val recvbuf = WordArray.array(WordVector.length szbuf, 0w0)
                   val status  = cBcastW8 (szbuf, WordVector.length szbuf, recvbuf, root, comm)
-                  val _       = assert (status = 0)
+                  val _       = assert (status = Success)
                   val sz      = Pickle.unpickle Pickle.int (WordArray.vector recvbuf)
                   val recvbuf = WordArray.array(sz, 0w0)
                   val status  = cBcastW8 (szbuf, sz, recvbuf, root, comm)
-                  val _       = assert (status = 0)
+                  val _       = assert (status = Success)
                in
                    Pickle.unpickle pu (WordArray.vector recvbuf)
                end)
@@ -365,53 +366,108 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
                                          
 
               
-    fun Scatter (pu: 'a Pickle.pu) (lst: 'a list, root, comm): 'a =
-      let 
-          val nprocs = Comm.Size comm
-
-          val _ = assert((List.length lst) = nprocs)
-
-          val pkls = List.map (Pickle.pickle pu) lst
-          val sendlength = WordVector.length (hd pkls)
-                                           
-	  (* Allocates receive buffer *)
-          val myrecvbuf = WordArray.array (sendlength, 0w0)
-
-          (* Allocates and fills send buffer *)
-          val sendbuf = WordVectorSlice.concat (List.map (fn(v) => (WordVectorSlice.slice (v,0,SOME sendlength))) pkls)
-                                 
+    fun Scatter (pu: 'a Pickle.pu) (data: 'a list option, root, comm): 'a =
+      let
+          val myrank = Comm.Rank comm
       in
-	  (* Performs the scatter & returns received value *)
-          cScatterW8 (sendbuf, sendlength, myrecvbuf, sendlength, root, comm);
-          Pickle.unpickle pu (WordArray.vector myrecvbuf)
+          if myrank = root
+          then (let 
+                   val nprocs = Comm.Size comm
+
+                   val lst = valOf data
+                   val _ = assert((List.length lst) = nprocs)
+                                 
+                   val pkls = List.map (Pickle.pickle pu) lst
+
+                   val szbuf  = Pickle.pickle Pickle.int (WordVector.length (hd pkls))
+                   val recvbuf = WordArray.array(WordVector.length szbuf, 0w0)
+
+                   val status  = cBcastW8 (szbuf, WordVector.length szbuf, recvbuf, root, comm)
+                   val _       = assert (status = Success)
+                                                      
+	           (* Allocates receive buffer *)
+                   val sz  = Pickle.unpickle Pickle.int (WordArray.vector recvbuf)
+                   val myrecvbuf = WordArray.array (sz, 0w0)
+                                                   
+                   (* Allocates and fills send buffer *)
+                   val sendbuf = WordVectorSlice.concat (List.map (fn(v) => (WordVectorSlice.slice (v,0,SOME sz))) pkls)
+                                                        
+               in
+	           (* Performs the scatter & returns received value *)
+                   cScatterW8 (sendbuf, sz, myrecvbuf, sz, root, comm);
+                   Pickle.unpickle pu (WordArray.vector myrecvbuf)
+               end)
+          else 
+              (let
+                  val szbuf   = Pickle.pickle Pickle.int 0
+                  val recvbuf = WordArray.array(WordVector.length szbuf, 0w0)
+                  val status  = cBcastW8 (szbuf, WordVector.length szbuf, recvbuf, root, comm)
+                  val _       = assert (status = Success)
+                  val sz      = Pickle.unpickle Pickle.int (WordArray.vector recvbuf)
+                  val recvbuf = WordArray.array(sz, 0w0)
+                  val status  = cScatterW8 (szbuf, sz, recvbuf, sz, root, comm)
+                  val _       = assert (status = Success)
+               in
+                   Pickle.unpickle pu (WordArray.vector recvbuf)
+              end)
       end
+          
+    fun Scatterv (pu: 'a Pickle.pu) (data: 'a list option, root, comm): 'a =
+      let
+          val myrank = Comm.Rank comm
+      in
+          if myrank = root
+          then
+              (let 
+                  val nprocs = Comm.Size comm
 
-    fun Scatterv (pu: 'a Pickle.pu) (lst: 'a list, root, comm): 'a =
-      let 
-          val nprocs = Comm.Size comm
+                  val lst = valOf data
+                                  
+                  val _ = assert((List.length lst) = nprocs)
+                                
+                  val pkls = List.map (Pickle.pickle pu) lst
+                  val sendlengths = List.map WordVector.length pkls
 
-          val _ = assert((List.length lst) = nprocs)
+                  val displs = List.rev (#2(List.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) sendlengths))
 
-          val pkls = List.map (Pickle.pickle pu) lst
-          val sendlengths = List.map WordVector.length pkls
-          val (_,displs)  = List.foldr (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) sendlengths
+                  (* Scatters the lengths of the buffers to all the processes *)
+                  val mylen = Scatter Pickle.int (SOME sendlengths, root, comm)
+                                             
+	          (* Allocates receive buffer *)
+                  val myrecvbuf = WordArray.array (mylen, 0w0)
                                                   
-          (* Scatters the lengths of the buffers to all the processes *)
-          val mylen = Scatter Pickle.int (sendlengths, root, comm)
-                                           
-	  (* Allocates receive buffer *)
-          val myrecvbuf = WordArray.array (mylen, 0w0)
+                  (* Allocates and fills send buffer *)
+                  val sendbuf = WordVectorSlice.concat (List.map (fn(v) => (WordVectorSlice.slice (v,0,NONE))) pkls)
 
-          (* Allocates and fills send buffer *)
-          val sendbuf = WordVectorSlice.concat (List.map (fn(v) => (WordVectorSlice.slice (v,0,NONE))) pkls)
-                                 
-      in
-	  (* Performs the scatter & returns received value *)
-          cScattervW8 (sendbuf, IntArray.fromList sendlengths, IntArray.fromList displs, 
-                       myrecvbuf, mylen, root, comm);
-          Pickle.unpickle pu (WordArray.vector myrecvbuf)
+                  
+	          (* Performs the scatter & returns received value *)
+                  val status  = cScattervW8 (sendbuf, IntArray.fromList sendlengths, IntArray.fromList displs, 
+                                             myrecvbuf, mylen, root, comm)
+                  val _       = assert (status = Success)
+                  
+              in
+                  Pickle.unpickle pu (WordArray.vector myrecvbuf)
+              end)
+          else
+              (let
+                  val sendbuf = Pickle.pickle Pickle.int 0
+
+                  (* Receives the length of the buffer for this process *)
+                  val mylen = Scatter Pickle.int (NONE, root, comm)
+
+	          (* Allocates receive buffer *)
+                  val myrecvbuf = WordArray.array (mylen, 0w0)
+                                                  
+	          (* Performs the scatter & returns received value *)
+                  val status = cScattervW8 (sendbuf, IntArray.fromList [], IntArray.fromList [], 
+                                            myrecvbuf, mylen, root, comm)
+                  val _      = assert (status = Success)
+              in
+                  Pickle.unpickle pu (WordArray.vector myrecvbuf)
+              end)
       end
 
+          
     fun Gather (pu: 'a Pickle.pu) (data: 'a, root, comm) =
       let 
           val nprocs = Comm.Size comm

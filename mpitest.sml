@@ -76,21 +76,37 @@ fun testBcast data =
          in
              mpiPrintLn ("received broadcast: " ^ result)
          end)
-(*        
-fun testScatter (data, len, make) =
-     then (let val _ = mpiPrintLn ("scatter send: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
-               val a = make len
-               val a = MPI.Collective.sendScatter (data, len, a, 0, MPI.Comm.World)
+             
+fun testScatter data =
+    if (myrank = 0)
+     then (let val _ = mpiPrintLn ("scatter send")
+               val a = MPI.Collective.Scatter Pickle.string (SOME (List.tabulate (size, fn(i) => data ^ " " ^ (Int.toString i))), 0, MPI.Comm.World)
            in
-               mpiPrintLn ("scatter received " ^ (toString a))
+               mpiPrintLn ("scatter received: " ^ a)
            end)
-     else (let val _ = mpiPrintLn ("scatter receive: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
-               val a = make len
-               val a = MPI.Collective.recvScatter (a, 0, MPI.Comm.World) 
+     else (let val _ = mpiPrintLn ("scatter receive")
+               val a = MPI.Collective.Scatter Pickle.string (NONE, 0, MPI.Comm.World) 
            in
-               mpiPrintLn ("scatter received " ^ (toString a))
-           end);
-     MPI.Barrier (MPI.Comm.World))
+               mpiPrintLn ("scatter received: " ^ a)
+           end)
+              
+
+
+fun testScatterv data =
+    if (myrank = 0)
+    then (let 
+             val a = MPI.Collective.Scatterv Pickle.string (SOME data, 0, MPI.Comm.World)
+         in
+             mpiPrintLn ("scatterv received " ^ a)
+         end)
+    else (let 
+             val a = MPI.Collective.Scatterv Pickle.string (NONE, 0, MPI.Comm.World) 
+         in
+             mpiPrintLn ("scatterv received " ^ a)
+         end)
+
+
+(*        
 
 fun testGather (data, len, make, toString) =
     (if (myrank = 0)
@@ -104,20 +120,6 @@ fun testGather (data, len, make, toString) =
                val a = MPI.Collective.sendGather (data, 0, MPI.Comm.World) 
            in
                mpiPrintLn ("gather sent status " ^ (Int.toString a))
-           end);
-     MPI.Barrier (MPI.Comm.World))
-
-fun testScatterv (data, toString) =
-    (if (myrank = 0)
-     then (let 
-               val a = MPI.Collective.sendScatterv (data, 0, MPI.Comm.World)
-           in
-               mpiPrintLn ("scatterv received " ^ (toString a))
-           end)
-     else (let 
-               val a = MPI.Collective.recvScatterv (MPI.MPI_CHAR_ARRAY_t, 0, MPI.Comm.World) 
-           in
-               mpiPrintLn ("scatterv received " ^ (toString a))
            end);
      MPI.Barrier (MPI.Comm.World))
 
@@ -244,19 +246,16 @@ val _ = testSendRecv (Pickle.real, realdata, fn(x) => Real.+(x,1.0))
 
 val _ = testBcast "Hello!"
 
-(*
-val _ = testScatter (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (String.concat vsdata))),
-                     String.size (String.concat vsdata) div size,
-                     fn(len) => MPI.MPI_CHAR_ARRAY (CharArray.array (len, Char.chr 0)),
-                     charArrayString)
+val _ = testScatter "Hello"
 
+val _ = testScatterv vvsdata
+
+(*
 val _ = testGather (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (List.nth(vsdata,myrank)))),
                     vsize,
                     fn(len) => MPI.MPI_CHAR_ARRAY (CharArray.array (len, Char.chr 0)),
                     charArrayString)
 
-val _ = testScatterv (map (fn(s) => MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (s)))) vvsdata,
-                     charArrayString)
 
 val _ = testGatherv (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (List.nth(vvsdata,myrank)))),
                      charArrayString)
