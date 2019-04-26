@@ -528,7 +528,6 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
                   val (results,_) = List.foldl
                                         (fn(count,(ax,offset)) =>
                                             let
-                                                val _ = print ("offset = " ^ (Int.toString offset) ^ " count = " ^ (Int.toString count) ^ "\n")
                                                 val s = WordArraySlice.slice (recvbuf, offset, SOME(count))
                                                  in
                                                      ((uf (WordArraySlice.vector s))::ax, offset+count)
