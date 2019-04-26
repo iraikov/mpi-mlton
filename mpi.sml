@@ -482,7 +482,9 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
                   val sz = mylen * nprocs
                   val recvbuf = WordArray.array (sz, 0w0)
                   (* Gather the data *)
-                  val _ = cGatherW8 (mydata, mylen, recvbuf, mylen, root, comm)
+                  val status = cGatherW8 (mydata, mylen, recvbuf, mylen, root, comm)
+                  val _       = assert (status = Success)
+                                         
                   (* Build a list of results and return *)
                   val uf = Pickle.unpickle pu
                   val results = List.tabulate
@@ -500,7 +502,9 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
           else
               (let
                   val recvbuf = WordArray.array (0, 0w0)                  
-                  val _ = cGatherW8 (mydata, mylen, recvbuf, mylen, root, comm)
+                  val status = cGatherW8 (mydata, mylen, recvbuf, mylen, root, comm)
+                  val _      = assert (status = Success)
+                                                                                
               in
                   []
               end)
@@ -521,8 +525,10 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
                   (* Gather the data *)
                   val recvbuf = WordArray.array (List.foldl (op +) 0 recvlengths, 0w0)
                   val displs  = List.rev (#2(List.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) recvlengths))
-                  val _ = cGathervW8 (mydata, mylen, recvbuf, IntArray.fromList recvlengths,
-                                     IntArray.fromList displs, root, comm)
+                  val status  = cGathervW8 (mydata, mylen, recvbuf, IntArray.fromList recvlengths,
+                                            IntArray.fromList displs, root, comm)
+                  val _       = assert (status = Success)
+                                                                            
                   (* Build a list of results and return *)
                   val uf = Pickle.unpickle pu
                   val (results,_) = List.foldl
@@ -540,8 +546,9 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
               (* If not root, send our length *)
               (let
                   val recvbuf = WordArray.array (0, 0w0)                  
-                  val _ = cGathervW8 (mydata, mylen, recvbuf, IntArray.fromList [],
-                                      IntArray.fromList [], root, comm)
+                  val status  = cGathervW8 (mydata, mylen, recvbuf, IntArray.fromList [],
+                                            IntArray.fromList [], root, comm)
+                  val _       = assert (status = Success)
               in
                   []
               end)
