@@ -479,7 +479,8 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
           then
               (let
                   (* Allocate receive buffer *)
-                  val recvbuf = WordArray.array (mylen * nprocs, 0w0)
+                  val sz = mylen * nprocs
+                  val recvbuf = WordArray.array (sz, 0w0)
                   (* Gather the data *)
                   val _ = cGatherW8 (mydata, mylen, recvbuf, mylen, root, comm)
                   (* Build a list of results and return *)
@@ -489,7 +490,7 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
                                      fn(i) =>
                                         let
                                             val offset = i*mylen
-                                            val s = WordArraySlice.slice (recvbuf, offset, SOME(offset+mylen))
+                                            val s = WordArraySlice.slice (recvbuf, offset, SOME(mylen))
                                         in
                                             uf (WordArraySlice.vector s)
                                         end)
@@ -519,21 +520,22 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
               (let
                   (* Gather the data *)
                   val recvbuf = WordArray.array (List.foldl (op +) 0 recvlengths, 0w0)
-                  val (_,displs)  = List.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) recvlengths
+                  val displs  = List.rev (#2(List.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) recvlengths))
                   val _ = cGathervW8 (mydata, mylen, recvbuf, IntArray.fromList recvlengths,
                                      IntArray.fromList displs, root, comm)
                   (* Build a list of results and return *)
                   val uf = Pickle.unpickle pu
-                  val (results,_) = List.foldr
+                  val (results,_) = List.foldl
                                         (fn(count,(ax,offset)) =>
-                                                 let
-                                                     val s = WordArraySlice.slice (recvbuf, offset, SOME(offset+count))
+                                            let
+                                                val _ = print ("offset = " ^ (Int.toString offset) ^ " count = " ^ (Int.toString count) ^ "\n")
+                                                val s = WordArraySlice.slice (recvbuf, offset, SOME(count))
                                                  in
                                                      ((uf (WordArraySlice.vector s))::ax, offset+count)
                                                  end)
                                         ([],0) recvlengths  
               in
-                  results
+                  List.rev results
               end)
           else
               (* If not root, send our length *)

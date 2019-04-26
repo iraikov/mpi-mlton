@@ -106,38 +106,33 @@ fun testScatterv data =
          end)
 
 
-(*        
 
-fun testGather (data, len, make, toString) =
-    (if (myrank = 0)
-     then (let val _ = mpiPrintLn ("gather receive: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
-               val a = make (len * size)
-               val a = MPI.Collective.recvGather (a, len, data, 0, MPI.Comm.World)
+fun testGather data = 
+    if (myrank = 0)
+    then (let val _ = mpiPrintLn "gather receive"
+              val a = MPI.Collective.Gather Pickle.string (data, 0, MPI.Comm.World)
            in
-               mpiPrintLn ("gather received " ^ (toString a))
+               mpiPrintLn ("gather received " ^ (String.concat a))
            end)
-     else (let val _ = mpiPrintLn ("gather send: data = " ^ (toString data) ^ " len = " ^ (Int.toString len))
-               val a = MPI.Collective.sendGather (data, 0, MPI.Comm.World) 
+     else (let val _ = mpiPrintLn "gather send"
+               val _ = MPI.Collective.Gather Pickle.string (data, 0, MPI.Comm.World) 
            in
-               mpiPrintLn ("gather sent status " ^ (Int.toString a))
-           end);
-     MPI.Barrier (MPI.Comm.World))
+               ()
+           end)
 
-fun testGatherv (data, toString) =
-    (if (myrank = 0)
-     then (let val _ = mpiPrintLn ("gatherv receive: data = " ^ (toString data))
-               val (a,rlens) = MPI.Collective.recvGatherv (data, 0, MPI.Comm.World)
+fun testGatherv data =
+    if (myrank = 0)
+     then (let val _ = mpiPrintLn "gatherv receive"
+               val a = MPI.Collective.Gatherv Pickle.string (data, 0, MPI.Comm.World)
            in
-               mpiPrintLn ("gatherv received " ^ (toString a));
-               mpiPrintLn ("gatherv lengths: " ^ (showIntArray rlens))
+               mpiPrintLn ("gatherv received " ^ (String.concat a))
            end)
-     else (let val _ = mpiPrintLn ("gatherv send: data = " ^ (toString data))
-               val a = MPI.Collective.sendGatherv (data, 0, MPI.Comm.World) 
+    else (let val _ = mpiPrintLn "gatherv send"
+              val _ = MPI.Collective.Gatherv Pickle.string (data, 0, MPI.Comm.World) 
            in
-               mpiPrintLn ("gatherv sent status " ^ (Int.toString a))
-           end);
-     MPI.Barrier (MPI.Comm.World))
-*)
+               ()
+           end)
+
 
 val _ = 
     (if myrank = 0
@@ -250,14 +245,8 @@ val _ = testScatter "Hello"
 
 val _ = testScatterv vvsdata
 
-(*
-val _ = testGather (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (List.nth(vsdata,myrank)))),
-                    vsize,
-                    fn(len) => MPI.MPI_CHAR_ARRAY (CharArray.array (len, Char.chr 0)),
-                    charArrayString)
+val _ = testGather (List.nth (vsdata, myrank))
 
+val _ = testGatherv (List.nth (vvsdata, myrank))
 
-val _ = testGatherv (MPI.MPI_CHAR_ARRAY (CharArray.fromList (String.explode (List.nth(vvsdata,myrank)))),
-                     charArrayString)
-*)
 val _ = MPI.Finalize ()
