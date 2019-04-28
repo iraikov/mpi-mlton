@@ -180,3 +180,47 @@ int mlton_MPI_Gatherv_Word8 (uint8_t *sendbuf, size_t sn, uint8_t *recvbuf,
   return result;
 }
 
+
+int mlton_MPI_Allgather_Word8 (uint8_t *sendbuf, size_t sn, uint8_t *recvbuf, 
+                                int recvcount, MPI_Comm comm)
+{
+  int result; 
+
+  result = MPI_Allgather(sendbuf, sn, MPI_UINT8_T, recvbuf, recvcount, MPI_UINT8_T, comm);
+
+  return result;
+}
+
+
+int mlton_MPI_Allgatherv_Word8 (uint8_t *sendbuf, size_t sn, uint8_t *recvbuf, 
+                                int *recvcounts, int *displs, MPI_Comm comm)
+{
+  int result; 
+
+  result = MPI_Allgatherv(sendbuf, sn, MPI_UINT8_T, recvbuf, recvcounts, displs, MPI_UINT8_T, comm);
+
+  return result;
+}
+
+
+int mlton_MPI_Alltoall_Word8 (uint8_t *sendbuf, size_t sn, uint8_t *recvbuf, 
+                              int recvcount, MPI_Comm comm)
+{
+  int result; 
+
+  result = MPI_Alltoall(sendbuf, sn, MPI_UINT8_T, recvbuf, recvcount, MPI_UINT8_T, comm);
+
+  return result;
+}
+
+
+
+int mlton_MPI_Alltoallv_Word8 (uint8_t *sendbuf, int *sendcounts, int *sdispls,
+                               uint8_t *recvbuf, int *recvcounts, int *rdispls, MPI_Comm comm)
+{
+  int result; 
+
+  result = MPI_Alltoallv(sendbuf, sendcounts, sdispls, MPI_UINT8_T, recvbuf, recvcounts, rdispls, MPI_UINT8_T, comm);
+
+  return result;
+}

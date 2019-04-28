@@ -131,9 +131,39 @@ fun testGatherv data =
               val _ = MPI.Collective.Gatherv Pickle.string (data, 0, MPI.Comm.World) 
            in
                ()
-           end)
+          end)
+             
+fun testAllgather data = 
+    let val _ = mpiPrintLn "allgather receive"
+        val a = MPI.Collective.Allgather Pickle.string (data, MPI.Comm.World)
+    in
+        mpiPrintLn ("allgather received " ^ (String.concat a))
+    end
+
+fun testAllgatherv data =
+    let val _ = mpiPrintLn "allgatherv receive"
+        val a = MPI.Collective.Allgatherv Pickle.string (data, MPI.Comm.World)
+    in
+        mpiPrintLn ("allgatherv received " ^ (String.concat a))
+    end
 
 
+             
+fun testAlltoall data =
+    let val _ = mpiPrintLn ("alltoall send")
+        val a = MPI.Collective.Alltoall Pickle.string (List.tabulate (size, fn(i) => data ^ " " ^ (Int.toString i)), MPI.Comm.World)
+    in
+        mpiPrintLn ("alltoall received: " ^ (String.concat a))
+    end
+
+fun testAlltoallv data =
+    let val _ = mpiPrintLn ("alltoallv send")
+        val a = MPI.Collective.Alltoallv Pickle.string (List.tabulate (size, fn(i) => data ^ " " ^ (Int.toString i)), MPI.Comm.World)
+    in
+        mpiPrintLn ("alltoallv received " ^ (String.concat a))
+    end
+
+        
 val _ = 
     (if myrank = 0
      then 
@@ -249,4 +279,12 @@ val _ = testGather (List.nth (vsdata, myrank))
 
 val _ = testGatherv (List.nth (vvsdata, myrank))
 
+val _ = testAllgather (List.nth (vsdata, myrank))
+
+val _ = testAllgatherv (List.nth (vvsdata, myrank))
+
+val _ = testAlltoall (List.nth (vsdata, myrank))
+
+val _ = testAlltoallv (List.nth (vvsdata, myrank))
+                    
 val _ = MPI.Finalize ()

@@ -323,12 +323,15 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
 
     val cGathervW8 = _import "mlton_MPI_Gatherv_Word8"   : WordVector.vector * int * WordArray.array * IntArray.array * IntArray.array * int * comm -> int;
 
-    exception InvalidScatter
-    exception InvalidScatterDataSize of int * int * int
+    val cAllgatherW8 = _import "mlton_MPI_Allgather_Word8"   : WordVector.vector * int * WordArray.array * int * comm -> int;
 
-    exception InvalidGather
-    exception InvalidGatherDataSize of int * int * int
+    val cAllgathervW8 = _import "mlton_MPI_Allgatherv_Word8"   : WordVector.vector * int * WordArray.array * IntArray.array * IntArray.array * comm -> int;
 
+    val cAlltoallW8 = _import "mlton_MPI_Alltoall_Word8"   : WordVector.vector * int * WordArray.array * int * comm -> int;
+
+    val cAlltoallvW8 = _import "mlton_MPI_Alltoallv_Word8"   : WordVector.vector * IntArray.array * IntArray.array * WordArray.array * IntArray.array * IntArray.array * comm -> int;
+
+    
     fun Bcast  (pu: 'a Pickle.pu) (data, root, comm) =
       let
           val myrank = Comm.Rank comm
@@ -553,6 +556,144 @@ val Barrier    = _import "MPI_Barrier" : comm -> int ;
                   []
               end)
               
+      end
+          
+    fun Allgather (pu: 'a Pickle.pu) (data: 'a, comm) =
+      let 
+          val nprocs = Comm.Size comm
+          val myrank = Comm.Rank comm
+          val mydata = Pickle.pickle pu data
+          val mylen  = WordVector.length mydata
+
+          (* Allocate receive buffer *)
+          val sz = mylen * nprocs
+          val recvbuf = WordArray.array (sz, 0w0)
+          (* Gather the data *)
+          val status = cAllgatherW8 (mydata, mylen, recvbuf, mylen, comm)
+          val _       = assert (status = Success)
+                               
+          (* Build a list of results and return *)
+          val uf = Pickle.unpickle pu
+          val results = List.tabulate
+                            (nprocs,
+                             fn(i) =>
+                                let
+                                    val offset = i*mylen
+                                    val s = WordArraySlice.slice (recvbuf, offset, SOME(mylen))
+                                in
+                                    uf (WordArraySlice.vector s)
+                                end)
+      in
+          results
+      end
+
+
+    fun Allgatherv (pu: 'a Pickle.pu) (data: 'a, comm) =
+      let 
+          val nprocs = Comm.Size comm
+          val myrank = Comm.Rank comm
+          val mydata = Pickle.pickle pu data
+          val mylen  = WordVector.length mydata
+          val recvlengths = Allgather Pickle.int (mylen, comm)
+      in
+          let
+              (* Gather the data *)
+              val recvbuf = WordArray.array (List.foldl (op +) 0 recvlengths, 0w0)
+              val displs  = List.rev (#2(List.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) recvlengths))
+              val status  = cAllgathervW8 (mydata, mylen, recvbuf, IntArray.fromList recvlengths,
+                                           IntArray.fromList displs, comm)
+              val _       = assert (status = Success)
+                                   
+              (* Build a list of results and return *)
+              val uf = Pickle.unpickle pu
+              val (results,_) = List.foldl
+                                    (fn(count,(ax,offset)) =>
+                                        let
+                                            val s = WordArraySlice.slice (recvbuf, offset, SOME(count))
+                                        in
+                                            ((uf (WordArraySlice.vector s))::ax, offset+count)
+                                        end)
+                                    ([],0) recvlengths  
+          in
+              List.rev results
+          end
+              
+      end
+
+
+          
+    fun Alltoall (pu: 'a Pickle.pu) (data: 'a list, comm) =
+      let 
+          val nprocs = Comm.Size comm
+          val myrank = Comm.Rank comm
+                                 
+          val _ = assert((List.length data) = nprocs)
+                                 
+          val pkls = List.map (Pickle.pickle pu) data
+          val mylen  = WordVector.length (hd pkls)
+                                                
+          (* Allocate receive buffer *)
+          val sz = mylen * nprocs
+          val recvbuf = WordArray.array (sz, 0w0)
+
+          (* Allocates and fills send buffer *)
+          val sendbuf = WordVectorSlice.concat (List.map (fn(v) => (WordVectorSlice.slice (v,0,SOME mylen))) pkls)
+                                        
+          val status = cAlltoallW8 (sendbuf, mylen, recvbuf, mylen, comm)
+          val _       = assert (status = Success)
+                               
+          (* Build a list of results and return *)
+          val uf = Pickle.unpickle pu
+          val results = List.tabulate
+                            (nprocs,
+                             fn(i) =>
+                                let
+                                    val offset = i*mylen
+                                    val s = WordArraySlice.slice (recvbuf, offset, SOME(mylen))
+                                in
+                                    uf (WordArraySlice.vector s)
+                                end)
+      in
+          results
+      end
+
+    fun Alltoallv (pu: 'a Pickle.pu) (data: 'a list, comm) =
+      let 
+          val nprocs = Comm.Size comm
+          val myrank = Comm.Rank comm
+
+          val _ = assert((List.length data) = nprocs)
+                                 
+          val pkls = List.map (Pickle.pickle pu) data
+          val sendlengths = List.map WordVector.length pkls
+          val sdispls = List.rev (#2(List.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) sendlengths))
+
+          val recvlengths = Alltoall Pickle.int (sendlengths, comm)
+
+          (* Allocates receive buffer *)
+          val sz = List.foldl (op +) 0 recvlengths 
+          val recvbuf = WordArray.array (sz, 0w0)
+
+          (* Allocates and fills send buffer *)
+          val sendbuf = WordVectorSlice.concat (List.map (fn(v) => (WordVectorSlice.slice (v,0,NONE))) pkls)
+
+          val rdispls = List.rev (#2(List.foldl (fn (len,(i,lst)) => (i+len,i :: lst)) (0,[]) recvlengths))
+          val status  = cAlltoallvW8 (sendbuf, IntArray.fromList sendlengths, IntArray.fromList sdispls, recvbuf,
+                                      IntArray.fromList recvlengths, IntArray.fromList rdispls, comm)
+          val _       = assert (status = Success)
+                               
+          (* Build a list of results and return *)
+          val uf = Pickle.unpickle pu
+          val (results,_) = List.foldl
+                                (fn(count,(ax,offset)) =>
+                                    let
+                                        val s = WordArraySlice.slice (recvbuf, offset, SOME(count))
+                                    in
+                                        ((uf (WordArraySlice.vector s))::ax, offset+count)
+                                    end)
+                                ([],0) recvlengths  
+      in
+          List.rev results
       end
 
  end
